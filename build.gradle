@@ -1,0 +1,65 @@
+allprojects {
+    group 'com.storebrand'
+    version '0.1-SNAPSHOT'
+}
+
+subprojects {
+    apply plugin: 'eclipse'
+    apply plugin: 'idea'
+    apply plugin: 'java-library'
+    apply plugin: 'maven-publish'
+
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+
+    compileJava {
+        options.encoding = 'UTF-8'
+        options.deprecation = true
+        options.incremental = true
+        options.compilerArgs += ['-Werror', '-Xlint:all', '-Xlint:-serial']
+    }
+
+    java {
+        withJavadocJar()
+        withSourcesJar()
+    }
+
+    javadoc {
+        // without the -quiet option, the build fails due to errors&warns
+        options.addStringOption('Xdoclint:none', '-quiet')
+    }
+
+    project.buildDir = 'build-gradle'
+
+    repositories {
+        maven {
+            url "http://artifactory.skagenfondene.no/artifactory/libs-release"
+            allowInsecureProtocol = true
+        }
+        mavenCentral()
+    }
+
+    task allDependencies(type: DependencyReportTask) {}
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                pom {
+                    name = 'HealthCheck'
+                    description = 'Health checks for services.'
+                }
+                from components.java
+            }
+        }
+    }
+
+    // ------------------------------------------------
+    // -- Release configuration. The release file is not checked in to version control, and should
+    //    instead be kept locally to configure how to deploy this.
+    if (file("${ rootProject.projectDir }/repositories.gradle").exists()) {
+        apply from: "${ rootProject.projectDir }/repositories.gradle"
+    }
+}
+
+// GradleWrapper version specifier.
+wrapper { gradleVersion = "7.3.3" }
