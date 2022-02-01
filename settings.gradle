@@ -1,0 +1,4 @@
+rootProject.name = 'scheduledtask'
+include 'scheduledtask-api'
+include 'scheduledtask-core'
+
