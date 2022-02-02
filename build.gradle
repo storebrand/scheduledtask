@@ -1,3 +1,7 @@
+plugins {
+    id "com.github.spotbugs" version "5.0.5"
+}
+
 allprojects {
     group 'com.storebrand'
     version '0.1-SNAPSHOT'
@@ -8,6 +12,7 @@ subprojects {
     apply plugin: 'idea'
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
+    apply plugin: 'com.github.spotbugs'
 
     sourceCompatibility = 1.8
     targetCompatibility = 1.8
@@ -40,6 +45,18 @@ subprojects {
     }
 
     task allDependencies(type: DependencyReportTask) {}
+
+    spotbugs {
+        toolVersion = '4.5.3'
+    }
+
+    // To generate an HTML report and XML report
+    tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+        reports {
+            xml.required.set(false)
+            html.required.set(true)
+        }
+    }
 
     publishing {
         publications {

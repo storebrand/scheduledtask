@@ -1,3 +1,12 @@
 dependencies {
     api project(':scheduledtask-api')
+
+    // JSR-305 only used for non-required meta-annotations
+    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    testCompileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+}
+
+spotbugs {
+    // Exclude packages for files copied from Spring Framework, as we don't want to modify them
+    excludeFilter = file("spotbugs-exclude.xml")
 }
