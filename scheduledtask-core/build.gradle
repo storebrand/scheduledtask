@@ -18,6 +18,25 @@ dependencies {
     // JSR-305 only used for non-required meta-annotations
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
     testCompileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+
+
+    testImplementation(platform('org.junit:junit-bom:5.8.2'))
+    testImplementation('org.junit.jupiter:junit-jupiter')
+
+    // JDBC and H2 database used for testing
+    testImplementation 'org.springframework:spring-jdbc:5.3.15'
+    testImplementation 'com.h2database:h2:1.4.200'
+
+    // Placing logback-classic on testCompile path as we need some form of logging implementation.
+    //testImplementation "org.slf4j:slf4j-api:$slf4jVersion"
+    testRuntimeOnly 'ch.qos.logback:logback-classic:1.2.5'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
 }
 
 spotbugs {
