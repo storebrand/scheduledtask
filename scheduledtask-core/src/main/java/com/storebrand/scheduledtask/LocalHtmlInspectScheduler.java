@@ -22,7 +22,7 @@ import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.MasterLockDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
-import com.storebrand.scheduledtask.internal.cron.CronExpression;
+import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -49,7 +49,7 @@ public class LocalHtmlInspectScheduler {
     private final ScheduledTaskService _scheduledTaskService;
     private final Clock _clock;
 
-    public LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
+    LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
         _scheduledTaskService = scheduledTaskService;
         _clock = clock;
     }
@@ -591,8 +591,8 @@ public class LocalHtmlInspectScheduler {
         private final boolean active;
         private final Instant lastRunStarted;
         private final Instant lastRunComplete;
-        private final CronExpression activeCronExpression;
-        private final CronExpression defaultCronExpression;
+        private final String activeCronExpression;
+        private final String defaultCronExpression;
         private final Instant nextExpectedRun;
         private final int maxExpectedMinutes;
         private final boolean overdue;

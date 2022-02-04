@@ -27,7 +27,7 @@ import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.LogEntryImpl;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduleDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduledRunDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
-import com.storebrand.scheduledtask.internal.cron.CronExpression;
+import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 /**
  * Tests for {@link ScheduledTaskRepository}
