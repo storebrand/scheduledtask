@@ -40,7 +40,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  */
 public class MasterLockRepository {
     private static final Logger log = LoggerFactory.getLogger(MasterLockRepository.class);
-    public static final String MASTER_LOCK_TABLE = "STB_SCHEDULE_MASTER_LOCKER";
+    public static final String MASTER_LOCK_TABLE = "stb_master_locker";
     private final DataSource _dataSource;
     private final Clock _clock;
 

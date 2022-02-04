@@ -292,7 +292,7 @@ public interface ScheduledTaskService {
         ScheduleStatus failed(String msg, Throwable throwable);
 
         /**
-         * Sets this historic run to dispatched. Can be used with Mats to notify this is now delegated to further
+         * Sets this historic run to dispatched. Can be used with Mats<sup>3</sup> to notify this is now delegated to further
          * processing. Can be called multiple times in a row as long as the {@link #failed(String)}
          * or {@link #done(String)} is not set.
          */
