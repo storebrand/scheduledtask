@@ -20,7 +20,7 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.internal.util.StringUtils;
+import com.storebrand.scheduledtask.SpringCronUtils.StringUtils;
 
 /**
  * Will check and see if a table exists in the database and retrieve the {@link TableColumn}s and Primary keys names so

@@ -9,7 +9,6 @@ import java.util.Optional;
 import com.storebrand.healthcheck.Axis;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.MasterLockDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
-import com.storebrand.scheduledtask.internal.cron.CronExpression;
 
 /**
  * ScheduledTask methods for the scheduler service.
@@ -19,7 +18,7 @@ import com.storebrand.scheduledtask.internal.cron.CronExpression;
 public interface ScheduledTaskService {
 
     /**
-     * Create a new schedule that will run at the given {@link CronExpression}.
+     * Create a new schedule that will run at the given cron expression.
      *
      * @param scheduleName
      *         - Name of the schedule
@@ -152,22 +151,22 @@ public interface ScheduledTaskService {
          * Set a new cronExpression to be used by the schedule. If this is set to null it will fallback to use the
          * schedule defined at {@link #getActiveCronExpression()}.
          */
-        void setOverrideExpression(CronExpression newCronExpression);
+        void setOverrideExpression(String newCronExpression);
 
         /**
          * Retrieve the cronExpression that where set when the schedule was created by
          * {@link #addSchedule(String, String, Axis, int, ScheduleRunnable)}.
          */
-        CronExpression getDefaultCronExpression();
+        String getDefaultCronExpression();
 
         /**
          * Get the current used cronExpression by this schedule. If it is not overridden by
-         * {@link #setOverrideExpression(CronExpression)} then it will return the {@link #getDefaultCronExpression()}
+         * {@link #setOverrideExpression(String)} then it will return the {@link #getDefaultCronExpression()}
          * <p>
-         * If a new cronExpression has been set by using {@link #setOverrideExpression(CronExpression)} then that will
+         * If a new cronExpression has been set by using {@link #setOverrideExpression(String)} then that will
          * be used.
          */
-        CronExpression getActiveCronExpression();
+        String getActiveCronExpression();
 
         /**
          * Retrieve the in-memory timestamp on when the last run where started. May be null if it has not yet
@@ -300,9 +299,9 @@ public interface ScheduledTaskService {
     }
 
     /**
-     * You are not meant to implement this infertface but return a instance you get from {@link
-     * ScheduleRunContext#done(String)}, {@link ScheduleRunContext#failed(String)} or {@link
-     * ScheduleRunContext#dispatched(String)}
+     * You are not meant to implement this interface but return an instance you get from
+     * {@link ScheduleRunContext#done(String)}, {@link ScheduleRunContext#failed(String)} or
+     * {@link ScheduleRunContext#dispatched(String)}
      */
     interface ScheduleStatus {
 

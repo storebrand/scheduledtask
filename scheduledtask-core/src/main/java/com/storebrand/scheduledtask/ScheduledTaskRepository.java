@@ -27,7 +27,7 @@ import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduleDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduledRunDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
 import com.storebrand.scheduledtask.TableInspector.TableValidationException;
-import com.storebrand.scheduledtask.internal.cron.CronExpression;
+import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 

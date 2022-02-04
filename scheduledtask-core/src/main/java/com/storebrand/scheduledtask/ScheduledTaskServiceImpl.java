@@ -30,7 +30,7 @@ import com.storebrand.scheduledtask.MasterLockRepository.MasterLockDbo;
 import com.storebrand.scheduledtask.ScheduledTaskRepository.LogEntryDbo;
 import com.storebrand.scheduledtask.ScheduledTaskRepository.ScheduleDbo;
 import com.storebrand.scheduledtask.ScheduledTaskRepository.ScheduledRunDbo;
-import com.storebrand.scheduledtask.internal.cron.CronExpression;
+import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -445,7 +445,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         private final ScheduleRunnable _runnable;
         private final CronExpression _defaultCronExpression;
         private final int _maxExpectedMinutesToRun;
-        private CronExpression _overrideExpression;
+        private volatile CronExpression _overrideExpression;
         private volatile Instant _nextRun;
         private volatile Instant _currentRunStarted;
         private volatile Instant _lastRunCompleted;
@@ -544,7 +544,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
                         // ?: Are we master
                         if (!_masterLock.isMaster()) {
-                            Instant nextRun = nextScheduledRun(getActiveCronExpression(), Instant.now());
+                            Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now());
 
                             log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
@@ -570,7 +570,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                             log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
                                     + " is set to run once (NOW) and then continue as set in "
-                                    + "schedule '" + getActiveCronExpression().toString() + "'.");
+                                    + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
                             break SLEEP_LOOP;
                         }
 
@@ -598,7 +598,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     // doing a new sleep cycle to the next run.
                     if (!ScheduleTaskImpl.this._active) {
                         // -> No, we have paused the schedule so we should skip this run and do another sleep cycle.
-                        Instant nextRun = nextScheduledRun(getActiveCronExpression(), Instant.now());
+                        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now());
                         log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                                 + "' is currently deactivated so "
                                 + "we are skipping this run and setting next run to '" + nextRun + "'");
@@ -613,7 +613,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     // have verified that we should not stop/skip the schedule
                     log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                             + "' is beginning to do the run according "
-                            + "to the set schedule '" + getActiveCronExpression().toString() + "'.");
+                            + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
                     _currentRunStarted = Instant.now();
                     ScheduleRunContext ctx = new MyScheduleRunContext(ScheduleTaskImpl.this,
                             createInstanceId(), _scheduledTaskRepository, _clock, _currentRunStarted);
@@ -646,12 +646,12 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     _lastRunCompleted = Instant.now();
 
                     _isRunning = false;
-                    Instant nextRun = nextScheduledRun(getActiveCronExpression(), Instant.now());
+                    Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now());
                     log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + "' "
                             + " instanceId '" + ctx.instanceId() + "' "
                             + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
                             + "ms to run. Setting next run to '" + nextRun + "', "
-                            + "using CronExpression '" + getActiveCronExpression() + "'");
+                            + "using CronExpression '" + getActiveCronExpressionInternal() + "'");
 
 
                     _scheduledTaskRepository.updateNextRun(_schedulerName, _overrideExpression, nextRun);
@@ -710,22 +710,32 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
          * but we can override this in the monitor so we should check if the {@link #_overrideExpression} have been
          * set.
          */
-        @Override
-        public CronExpression getActiveCronExpression() {
+        CronExpression getActiveCronExpressionInternal() {
+            CronExpression overrideExpression = _overrideExpression;
             // :? Is the cron expression set
-            if (_overrideExpression == null) {
+            if (overrideExpression == null) {
                 // -> No, use the default cronExpression.
                 return _defaultCronExpression;
             }
-            return _overrideExpression;
+            return overrideExpression;
         }
 
         /**
-         * Return the default {@link CronExpression} set to the schedule when it is created.
+         * The cron expression currently set on the scheduler. Usually we only use the {@link #_defaultCronExpression}
+         * but we can override this in the monitor so we should check if the {@link #_overrideExpression} have been
+         * set.
          */
         @Override
-        public CronExpression getDefaultCronExpression() {
-            return _defaultCronExpression;
+        public String getActiveCronExpression() {
+            return getActiveCronExpressionInternal().toString();
+        }
+
+        /**
+         * Return the default cron expression set to the schedule when it is created.
+         */
+        @Override
+        public String getDefaultCronExpression() {
+            return _defaultCronExpression.toString();
         }
 
         /**
@@ -733,10 +743,11 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
          * {@link #_defaultCronExpression} again.
          */
         @Override
-        public void setOverrideExpression(CronExpression newCronExpression) {
-            _overrideExpression = newCronExpression;
-            _scheduledTaskRepository.updateNextRun(_schedulerName, newCronExpression,
-                    nextScheduledRun(newCronExpression, Instant.now()));
+        public void setOverrideExpression(String newCronExpression) {
+            CronExpression parsedNewCronExpression = CronExpression.parse(newCronExpression);
+            _overrideExpression = parsedNewCronExpression;
+            _scheduledTaskRepository.updateNextRun(_schedulerName, parsedNewCronExpression,
+                    nextScheduledRun(parsedNewCronExpression, Instant.now()));
             // Updated cron, wake thread. The next run may be earlier than the previous set sleep cycle.
             notifyThread();
         }
