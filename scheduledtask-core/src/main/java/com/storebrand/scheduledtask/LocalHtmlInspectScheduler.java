@@ -49,7 +49,7 @@ public class LocalHtmlInspectScheduler {
     private final ScheduledTaskService _scheduledTaskService;
     private final Clock _clock;
 
-    LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
+    public LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
         _scheduledTaskService = scheduledTaskService;
         _clock = clock;
     }
