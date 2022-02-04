@@ -38,9 +38,9 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  */
 public class ScheduledTaskRepository {
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskRepository.class);
-    public static final String SCHEDULE_TASK_TABLE = "STB_SCHEDULE";
-    public static final String SCHEDULE_RUN_TABLE = "STB_SCHEDULE_RUN";
-    public static final String SCHEDULE_LOG_ENTRY_TABLE = "STB_SCHEDULE_LOG_ENTRY";
+    public static final String SCHEDULE_TASK_TABLE = "stb_schedule";
+    public static final String SCHEDULE_RUN_TABLE = "stb_schedule_run";
+    public static final String SCHEDULE_LOG_ENTRY_TABLE = "stb_schedule_log_entry";
     private final DataSource _dataSource;
     private final Clock _clock;
 

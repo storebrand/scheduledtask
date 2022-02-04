@@ -1,5 +1,5 @@
 --------------------------------------------------
--- stb_schedule_master_locker
+-- stb_master_locker
 --------------------------------------------------
 -- Table for keeping track of the ScheduledTask master locks
 -- Column lock_name: the name of the scheduler
@@ -9,7 +9,7 @@
 --
 -- The columns lock_taken_time and lock_last_updated_time is used to keep track on the master node
 -- to see if he currently is actively keeping the lock and how long he has kept it.
-CREATE TABLE stb_schedule_master_locker (
+CREATE TABLE stb_master_locker (
     lock_name VARCHAR NOT NULL,
     node_name VARCHAR NOT NULL,
     lock_taken_time datetime2 NOT NULL,
