@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.MasterLockDto;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -154,12 +154,14 @@ public class MasterLockRepositoryTest {
     @Test
     public void acquireLockShouldNotBeRequired_fail() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 22));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 22)
+                        .atZone(ZoneId.systemDefault()).toInstant());
 
         // :: Act
         boolean inserted1 = master.tryAcquireLock("acquiredLock", "test-node-1");
@@ -183,13 +185,15 @@ public class MasterLockRepositoryTest {
     @Test
     public void acquireLockThatIsTaken6MinAgo_fail() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
         // Move the clock 6 minutes
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26)
+                .atZone(ZoneId.systemDefault()).toInstant());
 
 
         // :: Act
@@ -214,12 +218,14 @@ public class MasterLockRepositoryTest {
     @Test
     public void acquireLockThatIsTaken10MinAgo_ok() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         // Move the clock 6 minutes
-        LocalDateTime secondAcquire = LocalDateTime.of(2021, 2, 28, 13, 31);
+        Instant secondAcquire = LocalDateTime.of(2021, 2, 28, 13, 31)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(secondAcquire);
 
 
@@ -247,14 +253,16 @@ public class MasterLockRepositoryTest {
     @Test
     public void keepLockAfterAcquired_ok() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
         // :: Act
-        LocalDateTime keepLockTime = LocalDateTime.of(2021, 02, 28, 13, 23);
+        Instant keepLockTime = LocalDateTime.of(2021, 02, 28, 13, 23)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(keepLockTime);
         boolean keepLockUpdatesNode1 = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2 = master.tryAcquireLock("acquiredLock", "test-node-2");
@@ -277,21 +285,25 @@ public class MasterLockRepositoryTest {
     @Test
     public void multipleKeepLockAfterAcquired_ok() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
         // :: Act
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 23));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 23)
+                .atZone(ZoneId.systemDefault()).toInstant());
         boolean keepLockUpdatesNode1_first = master.keepLock("acquiredLock", "test-node-1");
         // 3 more minutes (initial acquire + 6 min)
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26)
+                .atZone(ZoneId.systemDefault()).toInstant());
         boolean keepLockUpdatesNode1_second = master.keepLock("acquiredLock", "test-node-1");
         // 4 more minutes (initial acquire + 11 min). Node 2 should not be able to acquire the lock even if the
         // first acquire where done 11 min ago
-        LocalDateTime lastKeepLockTime = LocalDateTime.of(2021, 2, 28, 13, 31);
+        Instant lastKeepLockTime = LocalDateTime.of(2021, 2, 28, 13, 31)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(lastKeepLockTime);
         boolean keepLockUpdatesNode1_third = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2 = master.tryAcquireLock("acquiredLock", "test-node-2");
@@ -318,22 +330,26 @@ public class MasterLockRepositoryTest {
     @Test
     public void multipleKeepLockAfterAcquiredOtherNodeShouldNotBeAllowedToDoKeepLock_ok() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
         // :: Act
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 23));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 23)
+                .atZone(ZoneId.systemDefault()).toInstant());
         boolean keepLockUpdatesNode1_first = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2_first = master.tryAcquireLock("acquiredLock", "test-node-2");
 
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26)
+                .atZone(ZoneId.systemDefault()).toInstant());
         boolean keepLockUpdatesNode1_second = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2_second = master.tryAcquireLock("acquiredLock", "test-node-2");
 
-        LocalDateTime lastKeepLockTime = LocalDateTime.of(2021, 2, 28, 13, 31);
+        Instant lastKeepLockTime = LocalDateTime.of(2021, 2, 28, 13, 31)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(lastKeepLockTime);
         boolean keepLockUpdatesNode1_third = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2_third = master.tryAcquireLock("acquiredLock", "test-node-2");
@@ -360,7 +376,8 @@ public class MasterLockRepositoryTest {
     @Test
     public void firstNodeLoosesLock_ok() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
@@ -369,13 +386,15 @@ public class MasterLockRepositoryTest {
         // :: Act
         // Node1 does not manage to do keepLock within the timespan, it will fail to do keepLock at +6 min.
         // At this time the node2 also tries to acquire the lock but also fails due to the same reason.
-        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26));
+        _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 26)
+                .atZone(ZoneId.systemDefault()).toInstant());
         boolean keepLockUpdatesNode1_first = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2_first = master.tryAcquireLock("acquiredLock", "test-node-2");
 
         // we have passed the 10 min time where the node 1 tries to keep lock again and fails, while node 2 acquires
         // the lock
-        LocalDateTime secondAcquireTime = LocalDateTime.of(2021, 2, 28, 13, 31);
+        Instant secondAcquireTime = LocalDateTime.of(2021, 2, 28, 13, 31)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(secondAcquireTime);
         boolean keepLockUpdatesNode1_second = master.keepLock("acquiredLock", "test-node-1");
         boolean acquireLockNode2_second = master.tryAcquireLock("acquiredLock", "test-node-2");
@@ -399,14 +418,16 @@ public class MasterLockRepositoryTest {
     @Test
     public void firstNodeReleasesLock_ok() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
 
         // :: Act
         // Node1 releases the lock so Node2 can acquire it
-        LocalDateTime secondAcquireTime = LocalDateTime.of(2021, 2, 28, 13, 23);
+        Instant secondAcquireTime = LocalDateTime.of(2021, 2, 28, 13, 23)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(secondAcquireTime);
         boolean releaseLockNode1 = master.releaseLock("acquiredLock", "test-node-1");
         master.getLock("acquiredLock");
@@ -427,7 +448,8 @@ public class MasterLockRepositoryTest {
     @Test
     public void secondNodeShouldNotBeAllowedToReleaseNode1Lock_fail() {
         // :: Setup
-        LocalDateTime initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20);
+        Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
         MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
@@ -435,7 +457,8 @@ public class MasterLockRepositoryTest {
 
         // :: Act
         // Node1 releases the lock so Node2 can acquire it
-        LocalDateTime secondAcquireTime = LocalDateTime.of(2021, 2, 28, 13, 23);
+        Instant secondAcquireTime = LocalDateTime.of(2021, 2, 28, 13, 23)
+                .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(secondAcquireTime);
         // node 1 keeps lock,
         boolean keepLockNode1 = master.keepLock("acquiredLock", "test-node-1");
@@ -482,8 +505,12 @@ public class MasterLockRepositoryTest {
             _clock = clock;
         }
 
-        public void setFixedClock(LocalDateTime dateTime) {
-            setClock(Clock.fixed(dateTime.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault()));
+        public void setFixedClock(Instant instant) {
+            setClock(Clock.fixed(instant, ZoneId.systemDefault()));
+        }
+
+        public void setFixedClock(LocalDateTime instant) {
+            setClock(Clock.fixed(instant.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault()));
         }
     }
 }
