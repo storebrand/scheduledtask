@@ -20,8 +20,8 @@ import java.util.stream.Collectors;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.MasterLockDto;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
+import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -49,7 +49,8 @@ public class LocalHtmlInspectScheduler {
     private final ScheduledTaskService _scheduledTaskService;
     private final Clock _clock;
 
-    LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "This is standard dependency injection.")
+    public LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
         _scheduledTaskService = scheduledTaskService;
         _clock = clock;
     }
@@ -264,7 +265,7 @@ public class LocalHtmlInspectScheduler {
         }
         // ?: We have a lock but it may be old
         else if (masterLock.get().getLockLastUpdatedTime().isBefore(
-                LocalDateTime.now(_clock).minus(5, ChronoUnit.MINUTES))) {
+                _clock.instant().minus(5, ChronoUnit.MINUTES))) {
             // Yes-> it is an old lock
             masterNodeDescription = "No-one currently has the lock, last node to have it where "
                     + "[" + masterLock.get().getNodeName() + "]";

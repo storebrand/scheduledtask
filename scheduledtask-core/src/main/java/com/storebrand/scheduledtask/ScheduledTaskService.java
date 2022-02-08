@@ -2,18 +2,16 @@ package com.storebrand.scheduledtask;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-
-import com.storebrand.healthcheck.Axis;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.MasterLockDto;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
 
 /**
  * ScheduledTask methods for the scheduler service.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
+ * @author Kristian Hiim
  */
 public interface ScheduledTaskService {
 
@@ -24,10 +22,12 @@ public interface ScheduledTaskService {
      *         - Name of the schedule
      * @param cronExpression
      *         - When this schedule should run.
+     * @param maxExpectedMinutes
+     *         - Amount of minutes this should run.
      * @param runnable
      *         - The runnable that this schedule should run.
      */
-    ScheduledTask addSchedule(String scheduleName, String cronExpression, Axis healthCheckLevel, int maxExpectedMinutes, ScheduleRunnable runnable);
+    ScheduledTask addSchedule(String scheduleName, String cronExpression, int maxExpectedMinutes, ScheduleRunnable runnable);
 
     /**
      * Get a schedule with a specific name.
@@ -110,10 +110,10 @@ public interface ScheduledTaskService {
          * Sets a schedule to run immediately. Note it will first mark this schedule to run by setting a flag in the db,
          * then wake up the scheduler thread so it will be triggered, assuming this is called on the node that has
          * the master lock it will trigger nearly instantly. However if this where triggered by a node that does not
-         * have the master lock it will delay for up to.
+         * have the master lock it will delay for a short amount of time depending on the implementation. The current
+         * default implementation will sleep for up to two minutes between checking for new tasks.
          * <p>
          * This will prepend a line to the logs informing this schedule run where manually started.
-         * {@link ScheduledTaskServiceImpl#SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS} before it runs.
          */
         void runNow();
 
@@ -155,7 +155,7 @@ public interface ScheduledTaskService {
 
         /**
          * Retrieve the cronExpression that where set when the schedule was created by
-         * {@link #addSchedule(String, String, Axis, int, ScheduleRunnable)}.
+         * {@link #addSchedule(String, String, int, ScheduleRunnable)}.
          */
         String getDefaultCronExpression();
 
@@ -197,6 +197,19 @@ public interface ScheduledTaskService {
         ScheduleRunContext getInstance(String instanceId);
     }
 
+    /**
+     * Represents the current state of a task.
+     */
+    enum State {
+        STARTED,
+        FAILED,
+        DISPATCHED,
+        DONE
+    }
+
+    /**
+     * Interface that all tasks are required to implement. Contains a run method that should perform the actual task.
+     */
     @FunctionalInterface
     interface ScheduleRunnable {
         ScheduleStatus run(ScheduleRunContext ctx);
@@ -315,5 +328,46 @@ public interface ScheduledTaskService {
         String getMessage();
         Optional<String> getThrowable();
         LocalDateTime getLogTime();
+    }
+
+    /**
+     * Information about the current master lock for scheduled tasks.
+     */
+    class MasterLockDto {
+        private final String lockName;
+        private final String nodeName;
+        private final Instant lockTakenTime;
+        private final Instant lockLastUpdatedTime;
+
+        public MasterLockDto(String lockName, String nodeName, Instant lockTakenTime, Instant lockLastUpdatedTime) {
+            this.lockName = lockName;
+            this.nodeName = nodeName;
+            this.lockTakenTime = lockTakenTime;
+            this.lockLastUpdatedTime = lockLastUpdatedTime;
+        }
+
+        public String getLockName() {
+            return lockName;
+        }
+
+        public String getNodeName() {
+            return nodeName;
+        }
+
+        public Instant getLockTakenTime() {
+            return lockTakenTime;
+        }
+
+        public Instant getLockLastUpdatedTime() {
+            return lockLastUpdatedTime;
+        }
+
+        /**
+         * Check if this lock is still valid. If it is over 5 min old it is invalid meaning this host where the
+         * one to have it last. The lock can't be re-claimed before it has passed 10 min since last update.
+         */
+        public boolean isValid(Instant now) {
+            return lockLastUpdatedTime.isAfter(now.minus(5, ChronoUnit.MINUTES));
+        }
     }
 }

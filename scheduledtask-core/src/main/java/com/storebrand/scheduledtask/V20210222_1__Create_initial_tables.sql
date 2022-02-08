@@ -4,12 +4,12 @@
 -- Table for keeping track of the ScheduledTask master locks
 -- Column lock_name: the name of the scheduler
 -- Column node_name: node of the server that currently has the lock
--- Column lock_taken_time: when this lock where last taken
+-- Column lock_taken_time: when this lock was last taken
 -- Column lock_last_updated_time: used by the master node to keep the lock
 --
 -- The columns lock_taken_time and lock_last_updated_time is used to keep track on the master node
 -- to see if he currently is actively keeping the lock and how long he has kept it.
-CREATE TABLE stb_master_locker (
+CREATE TABLE stb_schedule_master_locker (
     lock_name VARCHAR NOT NULL,
     node_name VARCHAR NOT NULL,
     lock_taken_time datetime2 NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE stb_schedule_table_version (
     version int NOT NULL
 );
 
--- If changes are done to these tables this value should crease by one.
+-- If changes are done to these tables this value should increase by one.
 INSERT INTO stb_schedule_table_version (version) VALUES (1);
 
 --------------------------------------------------
@@ -38,7 +38,7 @@ INSERT INTO stb_schedule_table_version (version) VALUES (1);
 -- Column run_once: flag that informs that this schedule should run immediately regardless of next_run
 -- Column cron_expression: When null the default coded in the java file will be used. if set then tis is the override
 -- Column next_run: timestamp on when the schedule should be running next time
--- Column last_updated: Timestamp when this row where last updated. IE when the last run where triggered.
+-- Column last_updated: Timestamp when this row was last updated. IE when the last run was triggered.
 --
 -- Note the last_updated may be set even if the is_active is false. This means the execution of the schedule is
 -- deactivated but it will be doing it's normal schedule "looping"
@@ -58,11 +58,11 @@ CREATE TABLE stb_schedule (
 -- Table for scheduleRun. This has the run history the schedules
 -- Column schedule_name: the name of the schedule
 -- Column instance_id: Instance for the run. = runTime + "-" + nodeName
--- Column run_start: When this schedule where started.
+-- Column run_start: When this schedule was started.
 -- Column status state of the schedule run, should be one of ScheduleTaskImpl.State STARTªED/FAILED/DISPATCHED/DONE
 -- Column status_msg: Some informing text that is connected to the state.
 -- Column status_throwable: Can only be set on STATUS = FAILED and can contain a throwable
--- Column status_time: When this schedule state where set.
+-- Column status_time: When this schedule state was set.
 CREATE TABLE stb_schedule_run (
     instance_id VARCHAR NOT NULL,
     schedule_name VARCHAR NOT NULL,
@@ -80,9 +80,8 @@ CREATE TABLE stb_schedule_run (
 -- Table for scheduleRunLogs storing the logs (if any) for a scheduleRun
 -- Column: instance_id: Instance for the run. = runTime + "-" + nodeName. Foreign Key is from the scheduleRun table
 -- Column: log_msg: message that is logged for the run.
--- Column: log_throwable: If set contains a trowable in addition to the log_msg
--- Column: log_time: timestamp on when this log where recorded.
-
+-- Column: log_throwable: If set contains a throwable in addition to the log_msg
+-- Column: log_time: timestamp on when this log was recorded.
 CREATE TABLE stb_schedule_log_entry (
     instance_id VARCHAR NOT NULL,
     log_msg VARCHAR NOT NULL,

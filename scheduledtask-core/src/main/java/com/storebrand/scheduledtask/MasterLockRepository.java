@@ -10,7 +10,6 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +20,7 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.MasterLockDto;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
 import com.storebrand.scheduledtask.TableInspector.TableValidationException;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -40,7 +39,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  */
 public class MasterLockRepository {
     private static final Logger log = LoggerFactory.getLogger(MasterLockRepository.class);
-    public static final String MASTER_LOCK_TABLE = "stb_master_locker";
+    public static final String MASTER_LOCK_TABLE = "stb_schedule_master_locker";
     private final DataSource _dataSource;
     private final Clock _clock;
 
@@ -48,7 +47,7 @@ public class MasterLockRepository {
         _dataSource = dataSource;
         _clock = clock;
 
-        // Make sure we have a table to use, and that it has the specification we expects it to have.
+        // Make sure we have a table to use, and that it has the specification we expect it to have.
         validateTableVersion();
         validateTableStructure();
     }
@@ -200,7 +199,7 @@ public class MasterLockRepository {
                         result.getTimestamp("lock_last_updated_time"));
                 masterLocks.add(row);
             }
-            return masterLocks.stream().map(dbo -> MasterLockDto.fromDbo(dbo)).collect(toList());
+            return masterLocks.stream().map(MasterLockRepository::fromDbo).collect(toList());
          }
     }
 
@@ -224,7 +223,7 @@ public class MasterLockRepository {
                             result.getString("node_name"),
                             result.getTimestamp("lock_taken_time"),
                             result.getTimestamp("lock_last_updated_time"));
-                    return Optional.of(MasterLockDto.fromDbo(dbo));
+                    return Optional.of(fromDbo(dbo));
                 }
 
                 // E-> No, we did not find anything
@@ -296,12 +295,19 @@ public class MasterLockRepository {
             return nodeName;
         }
 
-        public LocalDateTime getLockTakenTime() {
-            return lockTakenTime.toLocalDateTime();
+        public Instant getLockTakenTime() {
+            return lockTakenTime.toInstant();
         }
 
-        public LocalDateTime getLockLastUpdatedTime() {
-            return lockLastUpdatedTime.toLocalDateTime();
+        public Instant getLockLastUpdatedTime() {
+            return lockLastUpdatedTime.toInstant();
         }
+    }
+
+    static MasterLockDto fromDbo(MasterLockDbo dbo) {
+        return new MasterLockDto(dbo.getLockName(),
+                dbo.getNodeName(),
+                dbo.getLockTakenTime(),
+                dbo.getLockLastUpdatedTime());
     }
 }

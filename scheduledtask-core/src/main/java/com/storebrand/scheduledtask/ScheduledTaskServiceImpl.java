@@ -26,7 +26,6 @@ import com.storebrand.healthcheck.Axis;
 import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.Responsible;
 import com.storebrand.healthcheck.annotation.HealthCheck;
-import com.storebrand.scheduledtask.MasterLockRepository.MasterLockDbo;
 import com.storebrand.scheduledtask.ScheduledTaskRepository.LogEntryDbo;
 import com.storebrand.scheduledtask.ScheduledTaskRepository.ScheduleDbo;
 import com.storebrand.scheduledtask.ScheduledTaskRepository.ScheduledRunDbo;
@@ -58,13 +57,6 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private final MasterLockRepository _masterLockRepository;
     private final ScheduledTaskRepository _scheduledTaskRepository;
 
-    public enum State {
-        STARTED,
-        FAILED,
-        DISPATCHED,
-        DONE
-    }
-
     public ScheduledTaskServiceImpl(DataSource dataSource, Clock clock) {
         _dataSource = dataSource;
         _clock = clock;
@@ -95,6 +87,39 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
      *         - Name of the schedule
      * @param cronExpression
      *         - When this schedule should run.
+     * @param maxExpectedMinutes
+     *         - Amount of minutes this should run.
+     * @param runnable
+     *         - The runnable that this schedule should run.
+     */
+    @Override
+    @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
+            + "always uses Temporal LocalDateTime and is always known.")
+    public ScheduledTask addSchedule(String schedulerName, String cronExpression, int maxExpectedMinutes,
+            ScheduleRunnable runnable) {
+        // In the first insert we can calculate the next run directly since there is no override from db yet
+        CronExpression cronExpressionParsed = CronExpression.parse(cronExpression);
+        LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
+        Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
+
+        // Add the schedule to the database
+        _scheduledTaskRepository.createSchedule(schedulerName, nextRunInstant);
+
+        // Create the schedule
+        // TODO: Handle health checks
+        ScheduleTaskImpl schedule = new ScheduleTaskImpl(schedulerName, cronExpression,
+                Axis.DEGRADED_PARTIAL, _masterLock, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
+        _schedules.put(schedulerName, schedule);
+        return schedule;
+    }
+
+    /**
+     * Create a new schedule that will run at the given {@link CronExpression}.
+     *
+     * @param schedulerName
+     *         - Name of the schedule
+     * @param cronExpression
+     *         - When this schedule should run.
      * @param healthCheckLevel
      *         - If schedule fails what {@link Axis} should it report on {@link HealthCheck}.
      * @param maxExpectedMinutes
@@ -102,7 +127,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
      * @param runnable
      *         - The runnable that this schedule should run.
      */
-    @Override
+    // TODO: Handle healthchecks
     @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
             + "always uses Temporal LocalDateTime and is always known.")
     public ScheduledTask addSchedule(String schedulerName, String cronExpression, Axis healthCheckLevel,
@@ -208,18 +233,19 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     }
 
                     // ?: We have a lock but it may be old
-                    if (!masterLock.get().isValid(LocalDateTime.now(_clock))) {
+                    if (!masterLock.get().isValid(_clock.instant())) {
                         // Yes-> it is an old lock
-                        return checkContext.fault("No-one currently has the lock, last node to have it where "
-                                + "[" + masterLock.get().getNodeName() + "]. It where last updated "
-                                + "[" + masterLock.get().getLockLastUpdatedTime() + "]");
+                        return checkContext.fault("No-one currently has the lock, last node to have it was "
+                                + "[" + masterLock.get().getNodeName() + "]. It was last updated "
+                                + "[" + LocalDateTime.ofInstant(masterLock.get().getLockLastUpdatedTime(), ZoneId.systemDefault()) + "]");
                     }
 
                     // ----- Lock flag in db is valid.
-                    return checkContext.ok("The node [" + masterLock.get().nodeName + "] has the lock! "
-                            + "It where acquired "
-                            + "[" + masterLock.get().getLockTakenTime() + "] "
-                            + "and it where last updated [" + masterLock.get().lockLastUpdatedTime + "]");
+                    return checkContext.ok("The node [" + masterLock.get().getNodeName() + "] has the lock! "
+                            + "It was acquired "
+                            + "[" + LocalDateTime.ofInstant(masterLock.get().getLockTakenTime(), ZoneId.systemDefault()) + "] "
+                            + "and it was last updated ["
+                            + LocalDateTime.ofInstant(masterLock.get().getLockLastUpdatedTime(), ZoneId.systemDefault()) + "]");
                 });
     }
 
@@ -302,10 +328,10 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     // ===== MasterLock and Schedule ===================================================================================
 
     /**
-     * Master lock is responsible of acquiring and keeping a lock, the node that has this lock will be responsible
-     * of running ALL Schedules.
-     * When a lock is first acquired this node has this for 5 minutes and in order to keep it this node has to
-     * to the {@link MasterLockRepository#keepLock(String, String)} withing that timespan in order to keep it for a new
+     * Master lock is responsible for acquiring and keeping a lock, the node that has this lock will be responsible
+     * for running ALL Schedules.
+     * When a lock is first acquired this node has this for 5 minutes and in order to keep it this node has to the
+     * method {@link MasterLockRepository#keepLock(String, String)} within that timespan in order to keep it for a new
      * 5 minutes. If this node does not manage to keep the lock within the 5 min timespan it means no nodes are master
      * for the duration 5 - 10 min.
      * After the lock has not been updated for 10 minutes it can be re-acquired again.
@@ -1306,49 +1332,4 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
      }
 
-    public static class MasterLockDto {
-        private final String lockName;
-        private final String nodeName;
-        private final LocalDateTime lockTakenTime;
-        private final LocalDateTime lockLastUpdatedTime;
-
-        public MasterLockDto(String lockName, String nodeName, LocalDateTime lockTakenTime,
-                LocalDateTime lockLastUpdatedTime) {
-            this.lockName = lockName;
-            this.nodeName = nodeName;
-            this.lockTakenTime = lockTakenTime;
-            this.lockLastUpdatedTime = lockLastUpdatedTime;
-        }
-
-        static MasterLockDto fromDbo(MasterLockDbo dbo) {
-            return new MasterLockDto(dbo.getLockName(),
-                    dbo.getNodeName(),
-                    dbo.getLockTakenTime(),
-                    dbo.getLockLastUpdatedTime());
-        }
-
-        public String getLockName() {
-            return lockName;
-        }
-
-        public String getNodeName() {
-            return nodeName;
-        }
-
-        public LocalDateTime getLockTakenTime() {
-            return lockTakenTime;
-        }
-
-        public LocalDateTime getLockLastUpdatedTime() {
-            return lockLastUpdatedTime;
-        }
-
-        /**
-         * Check if this lock is still valid. If it is over 5 min old is is invalid meaning this host where the
-         * one to have it last. The lock can't be re-claimed before it has passed 10 min since last update.
-         */
-        public boolean isValid(LocalDateTime now) {
-            return lockLastUpdatedTime.isAfter(now.minus(5, ChronoUnit.MINUTES));
-        }
-    }
 }

@@ -26,7 +26,6 @@ import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.LogEntryImpl;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduleDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduledRunDto;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 /**
@@ -254,7 +253,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(nowInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.STARTED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.STARTED, scheduleRun.get().getStatus());
     }
 
     @Test
@@ -281,7 +280,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(nowInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.STARTED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.STARTED, scheduleRun.get().getStatus());
     }
 
     @Test
@@ -295,7 +294,7 @@ public class ScheduledTaskRepositoryTest {
                 nowInstant, "schedule run inserted");
 
         // :: Act
-        schedulerRep.setStatus("some-instance-id", State.DONE, "Updating state to DONE",
+        schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DONE, "Updating state to DONE",
                 null, Instant.now(_clock));
 
         // :: Assert
@@ -303,7 +302,7 @@ public class ScheduledTaskRepositoryTest {
         Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs("some-instance-id");
         assertTrue(scheduleRun.isPresent());
         assertEquals("Updating state to DONE", scheduleRun.get().getStatusMsg());
-        assertEquals(State.DONE, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.DONE, scheduleRun.get().getStatus());
         assertNull(scheduleRun.get().getStatusThrowable());
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
@@ -321,7 +320,7 @@ public class ScheduledTaskRepositoryTest {
                 nowInstant, "schedule run inserted");
 
         // :: Act
-        schedulerRep.setStatus("some-instance-id", State.FAILED, "This run failed",
+        schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED, "This run failed",
                 null, Instant.now(_clock));
 
         // :: Assert
@@ -329,7 +328,7 @@ public class ScheduledTaskRepositoryTest {
         Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs("some-instance-id");
         assertTrue(scheduleRun.isPresent());
         assertEquals("This run failed", scheduleRun.get().getStatusMsg());
-        assertEquals(State.FAILED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.FAILED, scheduleRun.get().getStatus());
         assertNull(scheduleRun.get().getStatusThrowable());
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
@@ -347,7 +346,7 @@ public class ScheduledTaskRepositoryTest {
                 nowInstant, "schedule run inserted");
 
         // :: Act
-        schedulerRep.setStatus("some-instance-id", State.FAILED, "This run failed",
+        schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED, "This run failed",
                 "some exception", Instant.now(_clock));
 
         // :: Assert
@@ -355,7 +354,7 @@ public class ScheduledTaskRepositoryTest {
         Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs("some-instance-id");
         assertTrue(scheduleRun.isPresent());
         assertEquals("This run failed", scheduleRun.get().getStatusMsg());
-        assertEquals(State.FAILED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.FAILED, scheduleRun.get().getStatus());
         assertNotNull(scheduleRun.get().getStatusThrowable());
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
@@ -373,9 +372,9 @@ public class ScheduledTaskRepositoryTest {
                 nowInstant, "schedule run inserted");
 
         // :: Act
-        boolean setFailed1 = schedulerRep.setStatus("some-instance-id", State.FAILED,
+        boolean setFailed1 = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED,
                 "Fault added after insert", "testing failed exception", Instant.now(_clock));
-        boolean setFailed2 = schedulerRep.setStatus("some-instance-id", State.FAILED,
+        boolean setFailed2 = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED,
                 "Fault added a second time", "testing 2 exception", Instant.now(_clock));
 
         // :: Assert
@@ -390,7 +389,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(nowInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.FAILED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.FAILED, scheduleRun.get().getStatus());
     }
 
     @Test
@@ -402,11 +401,11 @@ public class ScheduledTaskRepositoryTest {
         _clock.setFixedClock(now);
         boolean inserted = schedulerRep.addScheduleRun("test-schedule", "some-instance-id",
                 nowInstant, "schedule run inserted");
-        boolean setFailed = schedulerRep.setStatus("some-instance-id", State.FAILED,
+        boolean setFailed = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED,
                 "fault added after insert", "testing failed exception", Instant.now(_clock));
 
         // :: Act
-        boolean setDone = schedulerRep.setStatus("some-instance-id", State.DONE,
+        boolean setDone = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DONE,
                 "Updated status from failed to done", "second testing failed exception",
                 Instant.now(_clock));
 
@@ -422,7 +421,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(nowInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.DONE, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.DONE, scheduleRun.get().getStatus());
     }
 
     @Test
@@ -434,11 +433,11 @@ public class ScheduledTaskRepositoryTest {
         _clock.setFixedClock(now);
         boolean inserted = schedulerRep.addScheduleRun("test-schedule", "some-instance-id",
                 nowInstant, "schedule run inserted");
-        boolean setDone = schedulerRep.setStatus("some-instance-id", State.DONE,
+        boolean setDone = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DONE,
                 "done set after insert", null, Instant.now(_clock));
 
         // :: Act
-        boolean setFailed = schedulerRep.setStatus("some-instance-id", State.FAILED,
+        boolean setFailed = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED,
                 "Updated status from done to failed", "testing failed exception", Instant.now(_clock));
 
 
@@ -454,7 +453,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(nowInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.FAILED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.FAILED, scheduleRun.get().getStatus());
     }
 
     @Test
@@ -466,14 +465,14 @@ public class ScheduledTaskRepositoryTest {
         _clock.setFixedClock(now);
         boolean inserted = schedulerRep.addScheduleRun("test-schedule", "some-instance-id",
                 nowInstant, "schedule run inserted");
-        boolean setDispatched = schedulerRep.setStatus("some-instance-id", State.DISPATCHED,
+        boolean setDispatched = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DISPATCHED,
                 "Dispatch set after insert", null, Instant.now(_clock));
 
         // :: Act
         LocalDateTime failTime = LocalDateTime.of(2021, 3, 3, 12, 2);
         Instant failInstant = failTime.atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(failTime);
-        boolean setFailed = schedulerRep.setStatus("some-instance-id", State.FAILED,
+        boolean setFailed = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.FAILED,
                 "Dispatched to fail is ok", "testing failed exception", Instant.now(_clock));
 
 
@@ -489,7 +488,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(failInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.FAILED, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.FAILED, scheduleRun.get().getStatus());
     }
 
     @Test
@@ -501,17 +500,17 @@ public class ScheduledTaskRepositoryTest {
         _clock.setFixedClock(now);
         boolean inserted = schedulerRep.addScheduleRun("test-schedule", "some-instance-id",
                 nowInstant, "schedule run inserted");
-        boolean firstDispatched = schedulerRep.setStatus("some-instance-id", State.DISPATCHED,
+        boolean firstDispatched = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DISPATCHED,
                 "Dispatch set after insert", null, Instant.now(_clock));
 
         // :: Act
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 2));
-        boolean secondDispatched = schedulerRep.setStatus("some-instance-id", State.DISPATCHED,
+        boolean secondDispatched = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DISPATCHED,
                 "Second Dispatch", null, Instant.now(_clock));
         LocalDateTime doneTime = LocalDateTime.of(2021, 3, 3, 12, 2);
         Instant doneInstant = doneTime.atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(doneTime);
-        boolean setDone = schedulerRep.setStatus("some-instance-id", State.DONE,
+        boolean setDone = schedulerRep.setStatus("some-instance-id", ScheduledTaskService.State.DONE,
                 "Dispatched to done is ok", null, Instant.now(_clock));
 
         // :: Assert
@@ -526,7 +525,7 @@ public class ScheduledTaskRepositoryTest {
         assertEquals(nowInstant, scheduleRun.get().getRunStart());
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(doneInstant, scheduleRun.get().getStatusTime());
-        assertEquals(State.DONE, scheduleRun.get().getStatus());
+        assertEquals(ScheduledTaskService.State.DONE, scheduleRun.get().getStatus());
     }
 
     @Test

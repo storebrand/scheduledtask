@@ -25,7 +25,7 @@ import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.LogEntryImpl;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduleDto;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduledRunDto;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.State;
+import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
@@ -294,7 +294,7 @@ public class ScheduledTaskRepository {
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             pStmt.setString(1, instanceId);
             pStmt.setString(2, scheduleName);
-            pStmt.setString(3, State.STARTED.toString());
+            pStmt.setString(3, ScheduledTaskService.State.STARTED.toString());
             pStmt.setString(4, statusMsg);
             pStmt.setTimestamp(5, Timestamp.from(runStart));
             pStmt.setTimestamp(6, Timestamp.from(_clock.instant()));
@@ -327,7 +327,7 @@ public class ScheduledTaskRepository {
                 + " SET status = ?, status_msg = ?, status_throwable = ?, status_time = ? "
                 + " WHERE instance_id = ?";
 
-        if (state.equals(State.STARTED)) {
+        if (state.equals(ScheduledTaskService.State.STARTED)) {
             throw new IllegalArgumentException("The state STARTED can only be set during the addScheduleRun");
         }
 
@@ -844,7 +844,7 @@ public class ScheduledTaskRepository {
         }
 
         public State getStatus() {
-            return State.valueOf(status);
+            return ScheduledTaskService.State.valueOf(status);
         }
 
         public String getStatusMsg() {
