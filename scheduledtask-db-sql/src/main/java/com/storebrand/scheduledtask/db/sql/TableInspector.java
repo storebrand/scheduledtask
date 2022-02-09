@@ -1,4 +1,4 @@
-package com.storebrand.scheduledtask;
+package com.storebrand.scheduledtask.db.sql;
 
 import java.net.URL;
 import java.sql.Connection;
@@ -20,8 +20,6 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.SpringCronUtils.StringUtils;
-
 /**
  * Will check and see if a table exists in the database and retrieve the {@link TableColumn}s and Primary keys names so
  * the calling code can inspect to see if all the fields are in this database.
@@ -29,15 +27,15 @@ import com.storebrand.scheduledtask.SpringCronUtils.StringUtils;
  * @see <a href="https://www.progress.com/blogs/jdbc-tutorial-extracting-database-metadata-via-jdbc-driver">JDBC
  * Tutorial: Extracting Database Metadata via JDBC</>.
  */
-public class TableInspector {
+class TableInspector {
     private static final Logger log = LoggerFactory.getLogger(TableInspector.class);
-    public static final String TABLE_VERSION = "STB_SCHEDULE_TABLE_VERSION";
+    public static final String TABLE_VERSION = "stb_schedule_table_version";
     public static final int VALID_VERSION = 1;
     private final Map<String, TableColumn> _tableColumns;
     private final Map<String, String> _primaryKeys;
     private final Map<String, ForeignKey> _foreignKeys;
     private final String _tableName;
-    private static final String MIGRATION_FILE_NAME = "V20210222_1__Create_initial_tables.sql";
+    private static final String MIGRATION_FILE_NAME = "V_1__Create_initial_tables.sql";
     private final DataSource _dataSource;
 
     public TableInspector(DataSource dataSource, String tableName) {
@@ -188,7 +186,7 @@ public class TableInspector {
      */
     public final String getMigrationFileLocation() {
         URL codeSourceLocation = this.getClass().getProtectionDomain().getCodeSource().getLocation();
-        return codeSourceLocation + "com/skagenfondene/skagengoodies/scheduler/" + MIGRATION_FILE_NAME;
+        return codeSourceLocation + "com/storebrand/scheduledtask/db/sql" + MIGRATION_FILE_NAME;
     }
 
     public final String getMigrationLocationMessage() {
@@ -320,7 +318,7 @@ public class TableInspector {
 
         public Optional<Boolean> isNullable() {
             // ?: Is isNullable set
-            if (!StringUtils.hasText(nullable)) {
+            if (nullable == null || nullable.isEmpty()) {
                 // -> No, it is unknown so return optional empty
                 return Optional.empty();
             }
@@ -337,7 +335,7 @@ public class TableInspector {
 
         public Optional<Boolean> isAutoIncrement() {
             // ?: Is autoIncrement set
-            if (!StringUtils.hasText(autoIncrement)) {
+            if (autoIncrement == null || autoIncrement.isEmpty()) {
                 // -> No, it is unknown so return optional empty
                 return Optional.empty();
             }

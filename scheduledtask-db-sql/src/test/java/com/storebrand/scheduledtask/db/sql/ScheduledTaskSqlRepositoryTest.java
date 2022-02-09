@@ -21,9 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
-import com.storebrand.scheduledtask.MasterLockRepositoryTest.ClockMock;
+import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository;
 import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository.ScheduledRunDbo;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduleDto;

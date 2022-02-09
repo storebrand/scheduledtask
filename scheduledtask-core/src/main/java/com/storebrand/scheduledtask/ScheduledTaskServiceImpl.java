@@ -17,8 +17,6 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-import javax.sql.DataSource;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +24,7 @@ import com.storebrand.healthcheck.Axis;
 import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.Responsible;
 import com.storebrand.healthcheck.annotation.HealthCheck;
+import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduleDto;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
@@ -57,9 +56,10 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private final ScheduledTaskRepository _scheduledTaskRepository;
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public ScheduledTaskServiceImpl(ScheduledTaskRepository scheduledTaskRepository, DataSource dataSource, Clock clock) {
+    public ScheduledTaskServiceImpl(ScheduledTaskRepository scheduledTaskRepository,
+            MasterLockRepository masterLockRepository, Clock clock) {
         _clock = clock;
-        _masterLockRepository = new MasterLockRepository(dataSource, _clock);
+        _masterLockRepository = masterLockRepository;
         _scheduledTaskRepository = scheduledTaskRepository;
 
         _masterLock = new MasterLock(_masterLockRepository, this, clock);
