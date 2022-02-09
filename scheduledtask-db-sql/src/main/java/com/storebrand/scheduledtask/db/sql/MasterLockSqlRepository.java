@@ -1,4 +1,4 @@
-package com.storebrand.scheduledtask;
+package com.storebrand.scheduledtask.db.sql;
 
 import static java.util.stream.Collectors.toList;
 
@@ -21,7 +21,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
-import com.storebrand.scheduledtask.TableInspector.TableValidationException;
+import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
+import com.storebrand.scheduledtask.db.MasterLockRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -31,19 +33,19 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * then that node has the lock.
  * <p>
  * After a lock has been acquired for a node it has to do the {@link #keepLock(String, String)} within the next 5 min
- * in order to be allowed to keep it. If it does not update withing that timespan i has to wait until the
+ * in order to be allowed to keep it. If it does not update withing that timespan it has to wait until the
  * {@link MasterLockDbo#getLockLastUpdatedTime()} is over 10 min old before any node can acquire it again. This means
  * there is a 5 min gap where no node can aquire the lock at all.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
  */
-public class MasterLockRepository {
-    private static final Logger log = LoggerFactory.getLogger(MasterLockRepository.class);
+public class MasterLockSqlRepository implements MasterLockRepository {
+    private static final Logger log = LoggerFactory.getLogger(MasterLockSqlRepository.class);
     public static final String MASTER_LOCK_TABLE = "stb_schedule_master_locker";
     private final DataSource _dataSource;
     private final Clock _clock;
 
-    public MasterLockRepository(DataSource dataSource, Clock clock) {
+    public MasterLockSqlRepository(DataSource dataSource, Clock clock) {
         _dataSource = dataSource;
         _clock = clock;
 
@@ -52,15 +54,9 @@ public class MasterLockRepository {
         validateTableStructure();
     }
 
-    /**
-     * Will create a master lock if it does not exists. The lock will be created with the lockTakenTime and
-     * lockLastUpdateTime to {@link Instant#EPOCH} so all nodes can try to acquire it.
-     * @param lockName - Name of the lock to be inserted.
-     * @param nodeName - NodeName of the host currently having the lock.
-     * @return - Amount of rows inserted. 1 if insert where successful. 0 if it already exists
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    boolean tryCreateLock(String lockName, String nodeName) {
+    public boolean tryCreateLock(String lockName, String nodeName) {
         String sql = "INSERT INTO " + MASTER_LOCK_TABLE
                 + " (lock_name, node_name, lock_taken_time, lock_last_updated_time) "
                 + " SELECT ?, ?, ?, ? "
@@ -83,15 +79,7 @@ public class MasterLockRepository {
         }
     }
 
-    /**
-     * Tries to acquire the master lock.
-     * If this manages to update the lock_name it will mean this host has the lock for 5 minutes, during those 5 minutes
-     * it should try to run {@link #keepLock(String, String)} so it kan keep it for as long as it needs.
-     *
-     * @param lockName - Name of the lock that it should attempt to aquire.
-     * @param nodeName - Host name of the server that should keep the lock.
-     * @return - 1 if the lock where aquired. 0 if it did not manage to aquire the lock.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean tryAcquireLock(String lockName, String nodeName) {
         // This lock already should exist so try to acquire it.
@@ -119,11 +107,7 @@ public class MasterLockRepository {
         }
     }
 
-    /**
-     * Allows for the node that currenly has the lock to release it by setting it to {@link Instant#EPOCH}
-     * @param lockName - Lock name to release
-     * @param nodeName - The node name that is the current master node.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean releaseLock(String lockName, String nodeName) {
         String sql = "UPDATE " + MASTER_LOCK_TABLE
@@ -144,15 +128,7 @@ public class MasterLockRepository {
         }
     }
 
-    /**
-     * Used for the running host to keep the lock for 5 more minutes.
-     * If the <b>lock_last_updated_time</b> is updated that means this host still has this master lock for another 5 minutes.
-     * After 5 minutes it means no-one has it until 10 minutes has passed. At that time it is up for grabs again.
-     *
-     * @param lockName - name of the master lock
-     * @param nodeName - host name that currently has the lock. Should be this running host.
-     * @return - true if any node is updated. false if we did not manage to keep the lock (we lost the master lock).
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean keepLock(String lockName, String nodeName) {
         String sql = "UPDATE " + MASTER_LOCK_TABLE
@@ -178,10 +154,7 @@ public class MasterLockRepository {
         }
     }
 
-    /**
-     * Helper method to get all the locks in the masterLock table.
-     * @return
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public List<MasterLockDto> getLocks() throws SQLException {
         String sql = "SELECT * FROM " + MASTER_LOCK_TABLE;
@@ -199,14 +172,11 @@ public class MasterLockRepository {
                         result.getTimestamp("lock_last_updated_time"));
                 masterLocks.add(row);
             }
-            return masterLocks.stream().map(MasterLockRepository::fromDbo).collect(toList());
+            return masterLocks.stream().map(MasterLockSqlRepository::fromDbo).collect(toList());
          }
     }
 
-    /**
-     * Helper method to get a specific the lock in the masterLock table.
-     * @return
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public Optional<MasterLockDto> getLock(String lockName) {
         String sql = "SELECT * FROM " + MASTER_LOCK_TABLE
@@ -274,7 +244,17 @@ public class MasterLockRepository {
 
     // ===== DBO ==============================================================================
 
-    static class MasterLockDbo {
+    static MasterLockDto fromDbo(MasterLockDbo dbo) {
+        return new MasterLockDto(dbo.getLockName(),
+                dbo.getNodeName(),
+                dbo.getLockTakenTime(),
+                dbo.getLockLastUpdatedTime());
+    }
+
+    /**
+     * Simple DTO class that represents a master lock.
+     */
+    public static class MasterLockDbo {
         private final String lockName;
         private final String nodeName;
         private final Timestamp lockTakenTime;
@@ -302,12 +282,5 @@ public class MasterLockRepository {
         public Instant getLockLastUpdatedTime() {
             return lockLastUpdatedTime.toInstant();
         }
-    }
-
-    static MasterLockDto fromDbo(MasterLockDbo dbo) {
-        return new MasterLockDto(dbo.getLockName(),
-                dbo.getNodeName(),
-                dbo.getLockTakenTime(),
-                dbo.getLockLastUpdatedTime());
     }
 }

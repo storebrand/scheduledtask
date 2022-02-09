@@ -8,10 +8,12 @@ import java.util.Optional;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
+import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 
 /**
- * Interface for creating and storing scheduled tasks and run details in the database. This is meant for internal use
- * inside the implementation of {@link com.storebrand.scheduledtask.ScheduledTaskService}.
+ * Interface for creating and storing scheduled tasks and run details in the database. An implementation is required for
+ * scheduled tasks to work. This is meant for internal use inside {@link ScheduledTaskServiceImpl}, and should not be
+ * used outside this package, except for providing implementations.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.02
  * @author Kristian Hiim

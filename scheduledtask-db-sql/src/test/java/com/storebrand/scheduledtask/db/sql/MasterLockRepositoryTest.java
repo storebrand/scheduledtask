@@ -1,4 +1,4 @@
-package com.storebrand.scheduledtask;
+package com.storebrand.scheduledtask.db.sql;
 
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,11 +21,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
+import com.storebrand.scheduledtask.db.MasterLockRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
- * Tests for {@link MasterLockRepository}
+ * Tests for {@link MasterLockSqlRepository}
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
  */
@@ -33,7 +34,7 @@ public class MasterLockRepositoryTest {
     private final JdbcTemplate _jdbcTemplate;
     private final DataSource _dataSource;
     private final ClockMock _clock = new ClockMock();
-    static final String MASTER_TABLE_CREATE_SQL = "CREATE TABLE " + MasterLockRepository.MASTER_LOCK_TABLE + " ( "
+    static final String MASTER_TABLE_CREATE_SQL = "CREATE TABLE " + MasterLockSqlRepository.MASTER_LOCK_TABLE + " ( "
     + " lock_name VARCHAR NOT NULL, "
     + " node_name VARCHAR NOT NULL, "
     + " lock_taken_time datetime2 NOT NULL, "
@@ -61,7 +62,7 @@ public class MasterLockRepositoryTest {
 
     @AfterEach
     public void after() {
-        _jdbcTemplate.execute("DROP TABLE " + MasterLockRepository.MASTER_LOCK_TABLE + ";");
+        _jdbcTemplate.execute("DROP TABLE " + MasterLockSqlRepository.MASTER_LOCK_TABLE + ";");
         _jdbcTemplate.execute("DROP TABLE " + TableInspector.TABLE_VERSION + ";");
 
     }
@@ -69,7 +70,7 @@ public class MasterLockRepositoryTest {
     @Test
     public void createLockThatDoesNotExists() {
         // :: Setup
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         // :: Act
         boolean isInserted = master.tryCreateLock("new-lock-does-not-exists", "test-node-1");
 
@@ -84,7 +85,7 @@ public class MasterLockRepositoryTest {
     @Test
     public void createTwoLockThatNotExists() {
         // :: Setup
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         // :: Act
         boolean isInserted1 = master.tryCreateLock("new-lock-does-not-exists", "test-node-1");
         boolean isInserted2 = master.tryCreateLock("another-does-not-exists", "test-node-1");
@@ -103,7 +104,7 @@ public class MasterLockRepositoryTest {
     @Test
     public void createLockThatAlreadyExists() {
         // :: Setup
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         boolean isInsertedInitially = master.tryCreateLock("exiting lock", "test-node-1");
 
         // :: Act
@@ -118,7 +119,7 @@ public class MasterLockRepositoryTest {
     @Test
     public void acquireLockThatIsNotYetAcquired_fail() {
         // :: Setup
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockRepository master = new MasterLockSqlRepository(_dataSource, _clock);
 
         // :: Act
         boolean inserted = master.tryAcquireLock("unaquiredLock", "test-node-1");
@@ -132,7 +133,7 @@ public class MasterLockRepositoryTest {
     @Test
     public void acquireLockThatIsTaken_fail() {
         // :: Setup
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         boolean acquired1 = master.tryAcquireLock("acquiredLock", "test-node-1");
 
@@ -157,7 +158,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
         _clock.setFixedClock(LocalDateTime.of(2021, 2, 28, 13, 22)
@@ -188,7 +189,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
         // Move the clock 6 minutes
@@ -221,7 +222,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         // Move the clock 6 minutes
         Instant secondAcquire = LocalDateTime.of(2021, 2, 28, 13, 31)
@@ -256,7 +257,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
@@ -288,7 +289,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
@@ -333,7 +334,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
@@ -379,7 +380,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 
@@ -421,7 +422,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
 
         // :: Act
@@ -451,7 +452,7 @@ public class MasterLockRepositoryTest {
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
                 .atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(initiallyAcquired);
-        MasterLockRepository master = new MasterLockRepository(_dataSource, _clock);
+        MasterLockSqlRepository master = new MasterLockSqlRepository(_dataSource, _clock);
         master.tryCreateLock("acquiredLock", "test-node-1");
         master.tryAcquireLock("acquiredLock", "test-node-1");
 

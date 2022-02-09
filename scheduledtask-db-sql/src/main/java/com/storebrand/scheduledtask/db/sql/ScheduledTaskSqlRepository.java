@@ -25,8 +25,7 @@ import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
-import com.storebrand.scheduledtask.TableInspector;
-import com.storebrand.scheduledtask.TableInspector.TableValidationException;
+import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
