@@ -527,7 +527,7 @@ public class LocalHtmlInspectScheduler {
                 + "    <td>" + runDto.getStatusMsg() + "</td>"
                 + "    <td>"
                 + "        <div class=\"error-content log-modal-header\">"
-                + "            <div class=\"content-message error\">" + runDto.getStatusThrowableFirstLine() + "</div>"
+                + "            <div class=\"content-message error\">" + runDto.getStatusStackTraceFirstLine() + "</div>"
                 + "        </div>"
                 + "        <div class=\"log-modal-box hide-modal\">"
                 + "            <div class=\"log-modal-content\">"
@@ -569,12 +569,12 @@ public class LocalHtmlInspectScheduler {
                     + "        <span class=\"log-message\">" + logEntry.getMessage() + "</span>"
                     + "    </div>"
                     + "    <div class=\"error-content log-modal-header\">"
-                    + "        <div class=\"content-message error\">" + logEntry.getThrowableFirstLine() + "</div>"
+                    + "        <div class=\"content-message error\">" + logEntry.getStackTraceFirstLine() + "</div>"
                     + "    </div>"
                     + "    <div class=\"log-modal-box hide-modal\">"
                     + "        <div class=\"log-modal-content\">"
                     + "            <span class=\"log-modal-content-close\">&times;</span>"
-                    + "            <p>" + logEntry.getThrowableAsHtml() + "</p>"
+                    + "            <p>" + logEntry.getStackTraceAsHtml() + "</p>"
                     + "        </div>"
                     + "    </div>"
                     + "</li>");
@@ -706,18 +706,18 @@ public class LocalHtmlInspectScheduler {
         private final String instanceId;
         private final State status;
         private final String statusMsg;
-        private final String statusThrowable;
+        private final String statusStackTrace;
         private final LocalDateTime runStart;
         private final LocalDateTime statusTime;
         private List<MonitorHistoricRunLogEntryDto> logEntries = new ArrayList<>();
 
         public MonitorHistoricRunDto(String scheduleName, String instanceId, State status, String statusMsg,
-                String statusThrowable, LocalDateTime runStart, LocalDateTime statusTime) {
+                String statusStackTrace, LocalDateTime runStart, LocalDateTime statusTime) {
             this.scheduleName = scheduleName;
             this.instanceId = instanceId;
             this.status = status;
             this.statusMsg = statusMsg;
-            this.statusThrowable = statusThrowable;
+            this.statusStackTrace = statusStackTrace;
             this.runStart = runStart;
             this.statusTime = statusTime;
         }
@@ -727,7 +727,7 @@ public class LocalHtmlInspectScheduler {
                     contex.instanceId(),
                     contex.getStatus(),
                     contex.getStatusMsg(),
-                    contex.getStatusThrowable(),
+                    contex.getStatusStackTrace(),
                     contex.getRunStarted(),
                     contex.getStatusTime());
         }
@@ -748,35 +748,35 @@ public class LocalHtmlInspectScheduler {
             return statusMsg;
         }
 
-        public boolean hasStatusThrowable() {
-            return statusThrowable != null;
+        public boolean hasStatusStackTrace() {
+            return statusStackTrace != null;
         }
 
-        public List<String> getStatusThrowableLines() {
-            if (statusThrowable == null) {
+        public List<String> getStatusStackTraceLines() {
+            if (statusStackTrace == null) {
                 return new ArrayList<>();
             }
 
-            return Arrays.asList(statusThrowable.split("\\n\\t|\\n|\\t"));
+            return Arrays.asList(statusStackTrace.split("\\n\\t|\\n|\\t"));
         }
 
-        public String getStatusThrowableFirstLine() {
-            List<String> lines = getStatusThrowableLines();
+        public String getStatusStackTraceFirstLine() {
+            List<String> lines = getStatusStackTraceLines();
             if (lines.isEmpty()) {
                 return "";
             }
 
-            return getStatusThrowableLines().get(0);
+            return getStatusStackTraceLines().get(0);
         }
 
         public String getStatusThrowableAsHtml() {
-            return getStatusThrowableLines().stream()
+            return getStatusStackTraceLines().stream()
                     .map(line -> line + "<br>")
                     .collect(Collectors.joining());
         }
 
-        public String getStatusThrowable() {
-            return statusThrowable != null ? statusThrowable : "";
+        public String getStatusStackTrace() {
+            return statusStackTrace != null ? statusStackTrace : "";
         }
 
         public LocalDateTime getRunStart() {
@@ -799,7 +799,7 @@ public class LocalHtmlInspectScheduler {
 
         public boolean hasLogsThrowable() {
             return logEntries.stream()
-                    .filter(MonitorHistoricRunLogEntryDto::hasThrowable)
+                    .filter(MonitorHistoricRunLogEntryDto::hasStackTrace)
                     .findFirst()
                     .isPresent();
         }
@@ -815,17 +815,17 @@ public class LocalHtmlInspectScheduler {
 
     public static final class MonitorHistoricRunLogEntryDto {
         private final String _msg;
-        private final String _throwable;
+        private final String _stackTrace;
         private final LocalDateTime _logTime;
 
-        MonitorHistoricRunLogEntryDto(String msg, String throwable, LocalDateTime logTime) {
+        MonitorHistoricRunLogEntryDto(String msg, String stackTrace, LocalDateTime logTime) {
             _msg = msg;
-            _throwable = throwable;
+            _stackTrace = stackTrace;
             _logTime = logTime;
         }
 
         public static MonitorHistoricRunLogEntryDto fromDto(LogEntry dto) {
-            return new MonitorHistoricRunLogEntryDto(dto.getMessage(), dto.getThrowable().orElse(null),
+            return new MonitorHistoricRunLogEntryDto(dto.getMessage(), dto.getStackTrace().orElse(null),
                     dto.getLogTime());
         }
 
@@ -833,37 +833,37 @@ public class LocalHtmlInspectScheduler {
             return _msg;
         }
 
-        public boolean hasThrowable() {
-            return _throwable != null;
+        public boolean hasStackTrace() {
+            return _stackTrace != null;
         }
 
-        public String getThrowable() {
-            if (_throwable == null) {
+        public String getStackTrace() {
+            if (_stackTrace == null) {
                 return "";
             }
-            return _throwable;
+            return _stackTrace;
         }
 
-        public List<String> getThrowableLines() {
-            if (_throwable == null) {
+        public List<String> getStackTraceLines() {
+            if (_stackTrace == null) {
                 return new ArrayList<>();
             }
 
-            return Arrays.asList(_throwable.split("\\n\\t|\\n|\\t"));
+            return Arrays.asList(_stackTrace.split("\\n\\t|\\n|\\t"));
         }
 
-        public String getThrowableFirstLine() {
-            List<String> lines = getThrowableLines();
+        public String getStackTraceFirstLine() {
+            List<String> lines = getStackTraceLines();
             if (lines.isEmpty()) {
                 return "";
             }
 
-            return getThrowableLines().get(0);
+            return getStackTraceLines().get(0);
         }
 
-        public String getThrowableAsHtml() {
-            return getThrowableLines().stream()
-                    .map(line -> line + "<br>")
+        public String getStackTraceAsHtml() {
+            return getStackTraceLines().stream()
+                    .map(line -> escapeHtml(line) + "<br>")
                     .collect(Collectors.joining());
         }
 

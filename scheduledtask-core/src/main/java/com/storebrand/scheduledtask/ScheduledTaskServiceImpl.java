@@ -26,9 +26,9 @@ import com.storebrand.healthcheck.Axis;
 import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.Responsible;
 import com.storebrand.healthcheck.annotation.HealthCheck;
-import com.storebrand.scheduledtask.ScheduledTaskRepository.LogEntryDbo;
-import com.storebrand.scheduledtask.ScheduledTaskRepository.ScheduleDbo;
-import com.storebrand.scheduledtask.ScheduledTaskRepository.ScheduledRunDbo;
+import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
+import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduleDto;
+import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -52,16 +52,15 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private static final long SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
     private static final long MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
     private final MasterLock _masterLock;
-    private final DataSource _dataSource;
     private final Clock _clock;
     private final MasterLockRepository _masterLockRepository;
     private final ScheduledTaskRepository _scheduledTaskRepository;
 
-    public ScheduledTaskServiceImpl(DataSource dataSource, Clock clock) {
-        _dataSource = dataSource;
+    @SuppressFBWarnings("EI_EXPOSE_REP2")
+    public ScheduledTaskServiceImpl(ScheduledTaskRepository scheduledTaskRepository, DataSource dataSource, Clock clock) {
         _clock = clock;
         _masterLockRepository = new MasterLockRepository(dataSource, _clock);
-        _scheduledTaskRepository = new ScheduledTaskRepository(dataSource, _clock);
+        _scheduledTaskRepository = scheduledTaskRepository;
 
         _masterLock = new MasterLock(_masterLockRepository, this, clock);
         _masterLock.start();
@@ -253,7 +252,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     public void storebrandSchedulesServerStatus(CheckSpecification spec) {
         spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, checkContext -> {
                     Map<String, ScheduleDto> allSchedulesFromDb = _scheduledTaskRepository.getSchedules().stream()
-                            .collect(toMap(ScheduleDto::getScheduleName, scheduleDto -> scheduleDto));
+                            .collect(toMap(ScheduledTaskRepository.ScheduleDto::getScheduleName, scheduleDto -> scheduleDto));
                     TableBuilder tableBuilder = new TableBuilder(
                             "Schedule",
                             "Active",
@@ -269,8 +268,8 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         scheduleFailed = !isActive;
 
                         // has overridden CronExpression / default cron
-                        boolean defaultCron = allSchedulesFromDb.get(entry.getKey())
-                                .getOverriddenCronExpression() == null;
+                        boolean defaultCron = !allSchedulesFromDb.get(entry.getKey())
+                                .getOverriddenCronExpression().isPresent();
                         scheduleFailed = scheduleFailed || !defaultCron;
 
                         // Is this schedule overdue. This is stored in the memory version of the current run.
@@ -513,20 +512,22 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         // get the next run from the db:
                         Optional<ScheduleDto> scheduleFromDb = _scheduledTaskRepository.getSchedule(_schedulerName);
                         if (!scheduleFromDb.isPresent()) {
-                            throw new RuntimeException("Schedule with name '" + _schedulerName + " where not found'");
+                            throw new RuntimeException("Schedule with name '" + _schedulerName + " was not found'");
                         }
 
                         _nextRun = scheduleFromDb.get().getNextRun();
                         // We may have set an override expression, so retrieve this and store it for use when we
                         // should update the nextRun
-                        _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression();
+                        _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression()
+                                .map(CronExpression::parse)
+                                .orElse(null);
 
                         // ?: Are we the master node
                         if (_masterLock.isMaster()) {
                             // -> Yes, we are master and should only sleep if we are still waiting for the nextRun.
-                            if (Instant.now().isBefore(_nextRun)) {
+                            if (Instant.now(_clock).isBefore(_nextRun)) {
                                 // -> No, we have not yet passed the next run so we should sleep a bit
-                                long millisToWait = ChronoUnit.MILLIS.between(Instant.now(), _nextRun);
+                                long millisToWait = ChronoUnit.MILLIS.between(Instant.now(_clock), _nextRun);
                                 // We should only sleep only max SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS in
                                 // one sleeop loop.
                                 millisToWait = millisToWait > SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS
@@ -570,7 +571,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
                         // ?: Are we master
                         if (!_masterLock.isMaster()) {
-                            Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now());
+                            Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
 
                             log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
@@ -582,9 +583,14 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
                         // Re-retrieve the schedule from the db. It may have changed during the sleep:
                         scheduleFromDb = _scheduledTaskRepository.getSchedule(_schedulerName);
+                        if (!scheduleFromDb.isPresent()) {
+                            throw new RuntimeException("Schedule with name '" + _schedulerName + " was not found'");
+                        }
                         // We may have set an override expression, so retrieve this and store it for use when we
                         // should update the nextRun
-                        _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression();
+                        _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression()
+                                .map(CronExpression::parse)
+                                .orElse(null);
                         _nextRun = scheduleFromDb.get().getNextRun();
                         _active = scheduleFromDb.get().isActive();
                         _runOnce = scheduleFromDb.get().isRunOnce();
@@ -601,7 +607,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         }
 
                         // ?: Have we passed the nextRun instance
-                        if (Instant.now().isBefore(_nextRun)) {
+                        if (Instant.now(_clock).isBefore(_nextRun)) {
                             // -> No, we have not yet passed the nextRun (now is still before nextRun)
                             // so we should do another sleep cycle.
                             log.debug("Thread '" + ScheduleTaskImpl.this._schedulerName
@@ -624,13 +630,13 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     // doing a new sleep cycle to the next run.
                     if (!ScheduleTaskImpl.this._active) {
                         // -> No, we have paused the schedule so we should skip this run and do another sleep cycle.
-                        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now());
+                        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
                         log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                                 + "' is currently deactivated so "
                                 + "we are skipping this run and setting next run to '" + nextRun + "'");
-                        _scheduledTaskRepository.updateNextRun(_schedulerName, _overrideExpression, nextRun);
+                        _scheduledTaskRepository.updateNextRun(_schedulerName, getOverrideExpressionAsString(), nextRun);
                         _isRunning = false;
-                        _lastRunCompleted = Instant.now();
+                        _lastRunCompleted = Instant.now(_clock);
                         continue NEXTRUN;
                     }
 
@@ -640,7 +646,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
                             + "' is beginning to do the run according "
                             + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
-                    _currentRunStarted = Instant.now();
+                    _currentRunStarted = Instant.now(_clock);
                     ScheduleRunContext ctx = new MyScheduleRunContext(ScheduleTaskImpl.this,
                             createInstanceId(), _scheduledTaskRepository, _clock, _currentRunStarted);
                         _scheduledTaskRepository.addScheduleRun(_schedulerName, ctx.instanceId(),
@@ -669,10 +675,10 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         log.info(message);
                         ctx.failed(message, t);
                     }
-                    _lastRunCompleted = Instant.now();
+                    _lastRunCompleted = Instant.now(_clock);
 
                     _isRunning = false;
-                    Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now());
+                    Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
                     log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + "' "
                             + " instanceId '" + ctx.instanceId() + "' "
                             + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
@@ -680,7 +686,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                             + "using CronExpression '" + getActiveCronExpressionInternal() + "'");
 
 
-                    _scheduledTaskRepository.updateNextRun(_schedulerName, _overrideExpression, nextRun);
+                    _scheduledTaskRepository.updateNextRun(_schedulerName, getOverrideExpressionAsString(), nextRun);
                 }
                 catch (Throwable t) {
                     // ?: Check again for runThreads - as this will happen in shutdown
@@ -747,6 +753,16 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         /**
+         * Returns the current override expression, or null if there is no override expression.
+         */
+        String getOverrideExpressionAsString() {
+            CronExpression overrideExpression = _overrideExpression;
+            return overrideExpression != null
+                    ? overrideExpression.toString()
+                    : null;
+        }
+
+        /**
          * The cron expression currently set on the scheduler. Usually we only use the {@link #_defaultCronExpression}
          * but we can override this in the monitor so we should check if the {@link #_overrideExpression} have been
          * set.
@@ -765,15 +781,16 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         /**
-         * Set a new cronExpression to be used by the schedule. If this is set to null it will fallback to use the
+         * Set a new cronExpression to be used by the schedule. If this is set to null it will fall back to use the
          * {@link #_defaultCronExpression} again.
          */
         @Override
         public void setOverrideExpression(String newCronExpression) {
-            CronExpression parsedNewCronExpression = CronExpression.parse(newCronExpression);
+            CronExpression parsedNewCronExpression = newCronExpression != null
+                    ? CronExpression.parse(newCronExpression) : null;
             _overrideExpression = parsedNewCronExpression;
-            _scheduledTaskRepository.updateNextRun(_schedulerName, parsedNewCronExpression,
-                    nextScheduledRun(parsedNewCronExpression, Instant.now()));
+            _scheduledTaskRepository.updateNextRun(_schedulerName, newCronExpression,
+                    nextScheduledRun(parsedNewCronExpression, Instant.now(_clock)));
             // Updated cron, wake thread. The next run may be earlier than the previous set sleep cycle.
             notifyThread();
         }
@@ -861,7 +878,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                 // -> No, we are not running so we are not overdue at the moment
                 return Optional.empty();
             }
-            return Optional.of(ChronoUnit.MINUTES.between(_currentRunStarted, Instant.now()));
+            return Optional.of(ChronoUnit.MINUTES.between(_currentRunStarted, Instant.now(_clock)));
 
         }
 
@@ -989,7 +1006,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             _clock = clock;
             _instanceId = instanceId;
             _scheduledTaskRepository = scheduledTaskRepository;
-            _scheduledRunDto = ScheduledRunDto.newWithStateStarted(storebrandSchedule.getScheduleName(), instanceId, runStart);
+            _scheduledRunDto = ScheduledTaskRepository.ScheduledRunDto.newWithStateStarted(storebrandSchedule.getScheduleName(), instanceId, runStart);
         }
 
         /**
@@ -1040,8 +1057,8 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         @Override
-        public String getStatusThrowable() {
-            return _scheduledRunDto.getStatusThrowable();
+        public String getStatusStackTrace() {
+            return _scheduledRunDto.getStatusStackTrace();
         }
 
         @Override
@@ -1061,13 +1078,13 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         @Override
         public void log(String msg) {
-            _scheduledTaskRepository.addLogEntry(_instanceId, new LogEntryImpl(msg, LocalDateTime.now(_clock)));
+            _scheduledTaskRepository.addLogEntry(_instanceId, new LogEntry(msg, LocalDateTime.now(_clock)));
         }
 
         @Override
         public void log(String msg, Throwable throwable) {
             _scheduledTaskRepository.addLogEntry(_instanceId,
-                    new LogEntryImpl(msg, throwable, LocalDateTime.now(_clock)));
+                    new LogEntry(msg, throwableToString(throwable), LocalDateTime.now(_clock)));
         }
 
         @Override
@@ -1088,7 +1105,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         @Override
         public ScheduleStatus failed(String msg, Throwable throwable) {
-            _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg, throwable);
+            _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg, throwableToString(throwable));
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
             log("[" + State.FAILED + "] " + msg, throwable);
             return new ScheduleStatusImpl();
@@ -1113,7 +1130,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     // ===== Helpers===========================================================================
     /**
-     * Converts a stackTrace to string.
+     * Converts a throwable to string.
      */
     static String throwableToString(Throwable throwable) {
         if (throwable == null) {
@@ -1126,210 +1143,4 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         throwable.printStackTrace(pw);
         return sw.toString();
     }
-
-    // ===== DTO's ============================================================================================
-    /**
-     * The schedule settings retrieved from the database.
-     */
-    public static class ScheduleDto {
-        private final String scheduleName;
-        private final boolean active;
-        private final boolean runOnce;
-        private final CronExpression overriddenCronExpression;
-        private final Instant nextRun;
-        private final Instant lastUpdated;
-
-        public ScheduleDto(String scheduleName, boolean active, boolean runOnce, CronExpression cronExpression,
-                Instant nextRun, Instant lastUpdated) {
-            this.scheduleName = scheduleName;
-            this.active = active;
-            this.runOnce = runOnce;
-            this.overriddenCronExpression = cronExpression;
-            this.nextRun = nextRun;
-            this.lastUpdated = lastUpdated;
-        }
-
-        public static ScheduleDto fromDbo(ScheduleDbo dbo) {
-            return new ScheduleDto(dbo.getScheduleName(), dbo.isActive(), dbo.isRunOnce(), dbo.getCronExpression(),
-                    dbo.getNextRun(), dbo.getLastUpdated());
-        }
-
-        /**
-         * The name of the schedule
-         */
-        public String getScheduleName() {
-            return scheduleName;
-        }
-
-        /**
-         * Informs if this schedule is currently active or not. IE is it currently set to execute the runnable part.
-         * It will still "do the loop schedule" except it will skip running the supplied runnable if this is set
-         * to false.
-         */
-        public boolean isActive() {
-            return active;
-        }
-
-        /**
-         * If set to true infroms that this should run now regardless of the schedule, also it should only run now once.
-         * It is used from the monitor when a user clicks the "run now" button, this will be written to the db where the
-         * master node will pick it up and run it as soon as it checks the nextRun instant.
-         */
-        public boolean isRunOnce() {
-            return runOnce;
-        }
-
-        /**
-         * If set informs that this schedule has a new {@link CronExpression} that differs from the one
-         * defined in the code.
-         */
-        public CronExpression getOverriddenCronExpression() {
-            return overriddenCronExpression;
-        }
-
-        /**
-         * The instance on when the schedule is set to run next.
-         */
-        public Instant getNextRun() {
-            return nextRun;
-        }
-
-        /**
-         * When this schedule where last updated.
-         */
-        public Instant getLastUpdated() {
-            return lastUpdated;
-        }
-    }
-
-    /**
-     * Holds the information on a current or previous run.
-     */
-    public static class ScheduledRunDto {
-        private final String scheduleName;
-        private final String instanceId;
-        private State status;
-        private String statusMsg;
-        private String statusThrowable;
-        private final Instant runStart;
-        private Instant statusTime;
-
-        public ScheduledRunDto(String scheduleName, String instanceId, State status, String statusMsg,
-                String statusThrowable, Instant runStart, Instant statusTime) {
-            this.scheduleName = scheduleName;
-            this.instanceId = instanceId;
-            this.status = status;
-            this.statusMsg = statusMsg;
-            this.statusThrowable = statusThrowable;
-            this.runStart = runStart;
-            this.statusTime = statusTime;
-        }
-
-        static ScheduledRunDto newWithStateStarted(String scheduleName, String instanceId, Instant runStart) {
-            return new ScheduledRunDto(scheduleName, instanceId, State.STARTED, null,
-                    null, runStart, null);
-        }
-
-        static ScheduledRunDto fromDbo(ScheduledRunDbo dbo) {
-            return new ScheduledRunDto(dbo.getScheduleName(), dbo.getInstanceId(), dbo.getStatus(), dbo.getStatusMsg(),
-                    dbo.getStatusThrowable(), dbo.getRunStart(), dbo.getStatusTime());
-        }
-
-        public String getScheduleName() {
-            return scheduleName;
-        }
-
-        public String getInstanceId() {
-            return instanceId;
-        }
-
-        public State getStatus() {
-            return status;
-        }
-
-        public String getStatusMsg() {
-            return statusMsg;
-        }
-
-        public String getStatusThrowable() {
-            return statusThrowable;
-        }
-
-        public LocalDateTime getRunStart() {
-            return LocalDateTime.ofInstant(runStart, ZoneId.systemDefault());
-        }
-
-        public Instant getStatusInstant() {
-            return statusTime;
-        }
-
-        public LocalDateTime getStatusTime() {
-            return LocalDateTime.ofInstant(statusTime, ZoneId.systemDefault());
-        }
-
-        public void setStatus(State status, Instant statusTime, String statusMsg) {
-            this.status = status;
-            this.statusTime = statusTime;
-            this.statusMsg = statusMsg;
-            this.statusThrowable = null;
-        }
-
-        public void setStatus(State status, Instant statusTime, String statusMsg, Throwable throwable) {
-            this.status = status;
-            this.statusTime = statusTime;
-            this.statusMsg = statusMsg;
-            this.statusThrowable = throwableToString(throwable);
-        }
-    }
-
-    /**
-     * A log entry of a current or previous run.
-     */
-    public static final class LogEntryImpl implements LogEntry {
-        private final String _msg;
-        private final String _throwable;
-        private final LocalDateTime _logTime;
-
-        LogEntryImpl(String msg, Throwable throwable, LocalDateTime logTime) {
-            _msg = msg;
-            _throwable = throwableToString(throwable);
-            _logTime = logTime;
-        }
-
-        public static LogEntryImpl fromDbo(LogEntryDbo dbo) {
-            return new LogEntryImpl(dbo.getLogMessage(), dbo.getLogThrowable(), dbo.getLogTime());
-        }
-
-        LogEntryImpl(String msg, String throwable, LocalDateTime logTime) {
-            _msg = msg;
-            _throwable = throwable;
-            _logTime = logTime;
-        }
-
-        LogEntryImpl(String msg, LocalDateTime logTime) {
-            _msg = msg;
-            _logTime = logTime;
-            _throwable = null;
-        }
-
-        @Override
-        public String getMessage() {
-            return _msg;
-        }
-
-        @Override
-        public Optional<String> getThrowable() {
-            return Optional.ofNullable(_throwable);
-        }
-
-        public String getThrowableString() {
-            return _throwable != null ? _throwable : "";
-        }
-
-        @Override
-        public LocalDateTime getLogTime() {
-            return _logTime;
-        }
-     }
-
 }

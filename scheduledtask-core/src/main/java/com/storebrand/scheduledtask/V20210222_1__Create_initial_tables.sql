@@ -61,7 +61,7 @@ CREATE TABLE stb_schedule (
 -- Column run_start: When this schedule was started.
 -- Column status state of the schedule run, should be one of ScheduleTaskImpl.State STARTªED/FAILED/DISPATCHED/DONE
 -- Column status_msg: Some informing text that is connected to the state.
--- Column status_throwable: Can only be set on STATUS = FAILED and can contain a throwable
+-- Column status_stacktrace: Can only be set on STATUS = FAILED and can contain a stacktrace
 -- Column status_time: When this schedule state was set.
 CREATE TABLE stb_schedule_run (
     instance_id VARCHAR NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE stb_schedule_run (
     run_start DATETIME2 NOT NULL,
     status VARCHAR NULL,
     status_msg VARCHAR NULL,
-    status_throwable VARCHAR NULL,
+    status_stacktrace VARCHAR NULL,
     status_time DATETIME2 NOT NULL,
     CONSTRAINT PK_instance_id PRIMARY KEY (instance_id)
 );
@@ -80,12 +80,12 @@ CREATE TABLE stb_schedule_run (
 -- Table for scheduleRunLogs storing the logs (if any) for a scheduleRun
 -- Column: instance_id: Instance for the run. = runTime + "-" + nodeName. Foreign Key is from the scheduleRun table
 -- Column: log_msg: message that is logged for the run.
--- Column: log_throwable: If set contains a throwable in addition to the log_msg
+-- Column: log_stacktrace: If set contains a stacktrace in addition to the log_msg
 -- Column: log_time: timestamp on when this log was recorded.
 CREATE TABLE stb_schedule_log_entry (
     instance_id VARCHAR NOT NULL,
     log_msg VARCHAR NOT NULL,
-    log_throwable VARCHAR NULL,
+    log_stacktrace VARCHAR NULL,
     log_time datetime2 NOT NULL,
     CONSTRAINT FK_instance_id FOREIGN KEY (instance_id) REFERENCES stb_schedule_run (instance_id)
 );

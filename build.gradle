@@ -37,6 +37,8 @@ subprojects {
     // Common versions
     ext {
         slf4jVersion = '1.7.35'
+        junitVersion = '5.8.2'
+        healthCheckVersion = '0.3.+'
     }
 
     project.buildDir = 'build-gradle'

@@ -1,19 +1,15 @@
 dependencies {
-    api project(':scheduledtask-api')
+    implementation project(':scheduledtask-core')
 
     implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
     implementation "com.storebrand:healthcheck-annotation:$healthCheckVersion"
 
-    // Spotbug annotations only required at compiletime
-    compileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
-    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
-
     // The SFL4J API. Since you should provide the SLF4J implementation yourself, we use compileOnly.
     compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
 
-    // JSR-305 only used for non-required meta-annotations
-    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
-    testCompileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    // Spotbug annotations only required at compiletime
+    compileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
+    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
 
     // Testing
     testImplementation(platform("org.junit:junit-bom:$junitVersion"))
@@ -33,9 +29,4 @@ test {
     testLogging {
         events "passed", "skipped", "failed"
     }
-}
-
-spotbugs {
-    // Exclude packages for files copied from Spring Framework, as we don't want to modify them
-    excludeFilter = file("spotbugs-exclude.xml")
 }
