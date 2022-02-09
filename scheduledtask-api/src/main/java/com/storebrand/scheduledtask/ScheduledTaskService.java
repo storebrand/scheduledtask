@@ -253,7 +253,7 @@ public interface ScheduledTaskService {
         /**
          * Get the status {@link Throwable}. Will be null if it where not added to the last status message set.
          */
-        String getStatusThrowable();
+        String getStatusStackTrace();
 
         /**
          * Get the {@link LocalDateTime} on when this run where started.
@@ -324,10 +324,35 @@ public interface ScheduledTaskService {
      * Each log entry that is created with {@link ScheduleRunContext#log(String)}
      * and {@link ScheduleRunContext#log(String, Throwable)}
      */
-    interface LogEntry {
-        String getMessage();
-        Optional<String> getThrowable();
-        LocalDateTime getLogTime();
+    class LogEntry {
+        private final String _msg;
+        private final String _stackTrace;
+        private final LocalDateTime _logTime;
+
+
+        public LogEntry(String msg, String stackTrace, LocalDateTime logTime) {
+            _msg = msg;
+            _stackTrace = stackTrace;
+            _logTime = logTime;
+        }
+
+        public LogEntry(String msg, LocalDateTime logTime) {
+            _msg = msg;
+            _logTime = logTime;
+            _stackTrace = null;
+        }
+
+        public String getMessage() {
+            return _msg;
+        }
+
+        public Optional<String> getStackTrace() {
+            return Optional.ofNullable(_stackTrace);
+        }
+
+        public LocalDateTime getLogTime() {
+            return _logTime;
+        }
     }
 
     /**

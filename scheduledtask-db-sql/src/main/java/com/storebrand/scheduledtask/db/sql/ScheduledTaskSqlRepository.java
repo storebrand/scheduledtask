@@ -1,4 +1,4 @@
-package com.storebrand.scheduledtask;
+package com.storebrand.scheduledtask.db.sql;
 
 import static java.util.stream.Collectors.toList;
 
@@ -21,13 +21,13 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.LogEntryImpl;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduleDto;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl.ScheduledRunDto;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
+import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.TableInspector;
 import com.storebrand.scheduledtask.TableInspector.TableValidationException;
-import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
+import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -36,15 +36,15 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.02
  */
-public class ScheduledTaskRepository {
-    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskRepository.class);
+public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
+    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskSqlRepository.class);
     public static final String SCHEDULE_TASK_TABLE = "stb_schedule";
     public static final String SCHEDULE_RUN_TABLE = "stb_schedule_run";
     public static final String SCHEDULE_LOG_ENTRY_TABLE = "stb_schedule_log_entry";
     private final DataSource _dataSource;
     private final Clock _clock;
 
-    public ScheduledTaskRepository(DataSource dataSource, Clock clock) {
+    public ScheduledTaskSqlRepository(DataSource dataSource, Clock clock) {
         _dataSource = dataSource;
         _clock = clock;
 
@@ -53,20 +53,9 @@ public class ScheduledTaskRepository {
         validateScheduleLogEntryTableStructure();
     }
 
-    /**
-     * If the specified schedule is missing in the database it will create it. By default all new schedules will be set
-     * to <b>active</b>
-     *
-     * @param scheduleName
-     *         - Name of the schedule.
-     * @param cronExpression
-     *         - Cronexpression to insert, this can be null. Only added if it should be overridden by default.
-     * @param nextRun
-     *         - When the next run should be triggered.
-     * @return int - Amount of inserted rows. 0 or 1.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    int createSchedule(String scheduleName, CronExpression cronExpression, Instant nextRun) {
+    public int createSchedule(String scheduleName, String cronExpression, Instant nextRun) {
         String sql = "INSERT INTO " + SCHEDULE_TASK_TABLE
                 + " (schedule_name, is_active, run_once, cron_expression, next_run, last_updated) "
                 + " SELECT ?, ?, ?, ?, ?, ? "
@@ -77,13 +66,12 @@ public class ScheduledTaskRepository {
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            String cron = cronExpression == null ? null : cronExpression.toString();
             pStmt.setString(1, scheduleName);
             // All schedules when created is by default active
             pStmt.setBoolean(2, true);
             // All new schedules should not have run once set
             pStmt.setBoolean(3, false);
-            pStmt.setString(4, cron);
+            pStmt.setString(4, cronExpression);
             pStmt.setTimestamp(5, Timestamp.from(nextRun));
             pStmt.setTimestamp(6, Timestamp.from(_clock.instant()));
             pStmt.setString(7, scheduleName);
@@ -94,35 +82,11 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * If the specified schedule is missing in the database it will create it. By default all new schedules will be set
-     * to <b>active</b>
-     *
-     * @param scheduleName
-     *         - Name of the schedule.
-     * @param nextRun
-     *         - When the next run should be triggered.
-     * @return int - Amount of inserted rows. 0 or 1.
-     */
-    int createSchedule(String scheduleName, Instant nextRun) {
-        return createSchedule(scheduleName, null, nextRun);
-    }
-
-    /**
-     * Update the next run for a given schedule.
-     *
-     * @param scheduleName
-     *         - Name of the schedule
-     * @param overrideCron
-     *         - if set defines the overriden {@link CronExpression} that is used to calculate the nextRun
-     * @param nextRun
-     *         - When the schedule should run next
-     * @return int - amount of updates done
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public int updateNextRun(String scheduleName, CronExpression overrideCron, Instant nextRun) {
+    public int updateNextRun(String scheduleName, String overrideCronExpression, Instant nextRun) {
         // :? Check if we should insert the schedule first:
-        if (createSchedule(scheduleName, overrideCron, nextRun) == 1) {
+        if (createSchedule(scheduleName, overrideCronExpression, nextRun) == 1) {
             // -> Yes, we managed to insert the schedule so no need of doing an update.
             return 1;
         }
@@ -132,14 +96,13 @@ public class ScheduledTaskRepository {
                 + " SET schedule_name = ?, cron_expression = ?, next_run = ?, last_updated = ? "
                 + " WHERE schedule_name = ?";
 
-        log.info("Updating next run to [" + scheduleName + "] cronExpression [" + overrideCron + "] "
+        log.info("Updating next run to [" + scheduleName + "] cronExpression [" + overrideCronExpression + "] "
                 + "and nextRun [" + nextRun + "]");
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            String cron = overrideCron == null ? null : overrideCron.toString();
             pStmt.setString(1, scheduleName);
-            pStmt.setString(2, cron);
+            pStmt.setString(2, overrideCronExpression);
             pStmt.setTimestamp(3, Timestamp.from(nextRun));
             pStmt.setTimestamp(4, Timestamp.from(_clock.instant()));
             pStmt.setString(5, scheduleName);
@@ -150,16 +113,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Set the active state on a given schedule. If this is set to false then the scheduler will do the "looping" bit
-     * but skip the actual execution of the schedule it self.
-     *
-     * @param scheduleName
-     *         - name of the schedule
-     * @param active
-     *         - true if the schedule should execute the work during the run.
-     * @return int - amount of updates
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public int setActive(String scheduleName, boolean active) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
@@ -180,6 +134,7 @@ public class ScheduledTaskRepository {
         }
     }
 
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public int setRunOnce(String scheduleName, boolean runOnce) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
@@ -200,9 +155,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Get all schedules in the database
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public List<ScheduleDto> getSchedules() {
         String sql = "SELECT * FROM " + SCHEDULE_TASK_TABLE;
@@ -223,7 +176,7 @@ public class ScheduledTaskRepository {
                 schedules.add(row);
             }
             return schedules.stream()
-                    .map(scheduleDbo -> ScheduleDto.fromDbo(scheduleDbo))
+                    .map(ScheduledTaskSqlRepository::fromDbo)
                     .collect(toList());
         }
         catch (SQLException e) {
@@ -231,9 +184,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Get the schedule with a specific name.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public Optional<ScheduleDto> getSchedule(String scheduleName) {
         String sql = "SELECT * FROM " + SCHEDULE_TASK_TABLE
@@ -253,7 +204,7 @@ public class ScheduledTaskRepository {
                             result.getString("cron_expression"),
                             result.getTimestamp("next_run"),
                             result.getTimestamp("last_updated"));
-                    return Optional.of(ScheduleDto.fromDbo(scheduleDbo));
+                    return Optional.of(fromDbo(scheduleDbo));
                 }
 
                 // E-> No, we did not find anything
@@ -265,21 +216,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Add a schedule run result to the db.
-     *
-     * @param scheduleName
-     *         - Name of the schedule that did the run
-     * @param instanceId
-     *         - Unique identifier for this run.
-     * @param runStart
-     *         - When this run where started.
-     * @param statusMsg - Short describing text informing that this scheduleRun is started.
-     * <p>
-     * Will by default set the state to {@link State#STARTED}
-     *
-     * @return boolean - true if the run where inserted.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean addScheduleRun(String scheduleName, String instanceId, Instant runStart, String statusMsg) {
         String sql = "INSERT INTO " + SCHEDULE_RUN_TABLE
@@ -306,25 +243,12 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Update the {@link State} of a schedule run.
-     *
-     * @param instanceId
-     *         - Unique id for the schedule run to update.
-     * @param state
-     *         - a new {@link State} to set for this run. NOTE the {@link State#STARTED} is not valid here.
-     *         Also the states {@link State#FAILED} and {@link State#DONE} can only be set once.
-     * @param statusMsg
-     *         - A describing text informing about the state change.
-     * @param statusThrowable
-     *         - Optional, a throwable set when the state change is {@link State#FAILED}
-     *
-     * @return boolean, true if the update where successful.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public boolean setStatus(String instanceId, State state, String statusMsg, String statusThrowable, Instant statusTime) {
+    public boolean setStatus(String instanceId, State state, String statusMsg, String statusStackTrace,
+            Instant statusTime) {
         String sql = "UPDATE " + SCHEDULE_RUN_TABLE
-                + " SET status = ?, status_msg = ?, status_throwable = ?, status_time = ? "
+                + " SET status = ?, status_msg = ?, status_stacktrace = ?, status_time = ? "
                 + " WHERE instance_id = ?";
 
         if (state.equals(ScheduledTaskService.State.STARTED)) {
@@ -338,7 +262,7 @@ public class ScheduledTaskRepository {
             // Then it means it is up for grabs.
             pStmt.setString(1, state.toString());
             pStmt.setString(2, statusMsg);
-            pStmt.setString(3, statusThrowable);
+            pStmt.setString(3, statusStackTrace);
             pStmt.setTimestamp(4, Timestamp.from(statusTime));
             pStmt.setString(5, instanceId);
             return pStmt.executeUpdate() == 1;
@@ -348,9 +272,10 @@ public class ScheduledTaskRepository {
         }
     }
 
+    @Override
     public boolean setStatus(ScheduledRunDto scheduledRunDto) {
         return setStatus(scheduledRunDto.getInstanceId(), scheduledRunDto.getStatus(), scheduledRunDto.getStatusMsg(),
-                scheduledRunDto.getStatusThrowable(), scheduledRunDto.getStatusInstant());
+                scheduledRunDto.getStatusStackTrace(), scheduledRunDto.getStatusInstant());
     }
 
     /**
@@ -379,7 +304,7 @@ public class ScheduledTaskRepository {
                             result.getString("instance_id"),
                             result.getString("status"),
                             result.getString("status_msg"),
-                            result.getString("status_throwable"),
+                            result.getString("status_stacktrace"),
                             result.getTimestamp("run_start"),
                             result.getTimestamp("status_time"),
                             logEntries));
@@ -394,13 +319,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Get the specific {@link ScheduledRunDbo} with the specified instanceId
-     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(String)} to fetch these.
-     * @param instanceId
-     *         - The instanceId to retrieve the scheduled run for.
-     * @return
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public Optional<ScheduledRunDto> getScheduleRun(String instanceId) {
         String sql = "SELECT * FROM " + SCHEDULE_RUN_TABLE
@@ -418,11 +337,11 @@ public class ScheduledTaskRepository {
                             result.getString("instance_id"),
                             result.getString("status"),
                             result.getString("status_msg"),
-                            result.getString("status_throwable"),
+                            result.getString("status_stacktrace"),
                             result.getTimestamp("run_start"),
                             result.getTimestamp("status_time"),
                             Collections.emptyList());
-                    return Optional.of(ScheduledRunDto.fromDbo(scheduledRun));
+                    return Optional.of(fromDbo(scheduledRun));
                 }
 
                 // E-> No, we did not find anything
@@ -435,14 +354,7 @@ public class ScheduledTaskRepository {
     }
 
 
-    /**
-     * Get the last inserted ScheduleRun for the given scheduleName.
-     * <p>
-     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(String)} to fetch these.
-     *
-     * @param scheduleName
-     *         - Name of the schedule to retrieve the last run from
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public Optional<ScheduledRunDto> getLastRunForSchedule(String scheduleName) {
         String sql = "SELECT TOP(1) * FROM " + SCHEDULE_RUN_TABLE
@@ -462,11 +374,11 @@ public class ScheduledTaskRepository {
                             result.getString("instance_id"),
                             result.getString("status"),
                             result.getString("status_msg"),
-                            result.getString("status_throwable"),
+                            result.getString("status_stacktrace"),
                             result.getTimestamp("run_start"),
                             result.getTimestamp("status_time"),
                             Collections.emptyList());
-                    return Optional.of(ScheduledRunDto.fromDbo(scheduleRunDbo));
+                    return Optional.of(fromDbo(scheduleRunDbo));
                 }
 
                 // E-> No, we did not find anything
@@ -478,12 +390,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Retrieves all the last {@link ScheduledRunDbo} for all schedule names.
-     * The results are sorted by {@link ScheduledRunDbo#getRunStart()} descending.
-     * <p>
-     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(String)} to fetch these.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public List<ScheduledRunDto> getLastScheduleRuns() {
         String sql = " SELECT * "
@@ -506,7 +413,7 @@ public class ScheduledTaskRepository {
                         result.getString("instance_id"),
                         result.getString("status"),
                         result.getString("status_msg"),
-                        result.getString("status_throwable"),
+                        result.getString("status_stacktrace"),
                         result.getTimestamp("run_start"),
                         result.getTimestamp("status_time"),
                         Collections.emptyList());
@@ -514,7 +421,7 @@ public class ScheduledTaskRepository {
             }
 
             return scheduledRuns.stream()
-                        .map(scheduledRunDbo -> ScheduledRunDto.fromDbo(scheduledRunDbo))
+                        .map(ScheduledTaskSqlRepository::fromDbo)
                         .collect(toList());
         }
         catch (SQLException e) {
@@ -522,14 +429,7 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Get all {@link ScheduledRunDbo} between a given timespan.
-     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(String)} to fetch these.
-     * @param from
-     *         - from time and including
-     * @param to
-     *         - to and including
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public List<ScheduledRunDto> getScheduleRunsBetween(String scheduleName, LocalDateTime from, LocalDateTime to) {
         String sql = "SELECT * FROM " + SCHEDULE_RUN_TABLE
@@ -553,7 +453,7 @@ public class ScheduledTaskRepository {
                             result.getString("instance_id"),
                             result.getString("status"),
                             result.getString("status_msg"),
-                            result.getString("status_throwable"),
+                            result.getString("status_stacktrace"),
                             result.getTimestamp("run_start"),
                             result.getTimestamp("status_time"),
                             Collections.emptyList());
@@ -561,7 +461,7 @@ public class ScheduledTaskRepository {
                 }
 
                 return scheduledRuns.stream()
-                        .map(scheduledRunDbo -> ScheduledRunDto.fromDbo(scheduledRunDbo))
+                        .map(ScheduledTaskSqlRepository::fromDbo)
                         .collect(toList());
             }
         }
@@ -571,23 +471,15 @@ public class ScheduledTaskRepository {
     }
 
 
-    /**
-     * Add a {@link LogEntry} to a specified ScheduleRun by using the scheduleRun's instanceId.
-     *
-     * @param instanceId
-     *         - InstanceId for the schedule run to add the logs to
-     * @param logEntry
-     *         - A {@link LogEntry} to insert.
-     * @return int - amount of inserts.
-     */
+    @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public int addLogEntry(String instanceId, LogEntry logEntry) {
         String sql = "INSERT INTO " + SCHEDULE_LOG_ENTRY_TABLE
-                + " (instance_id, log_msg, log_throwable, log_time) "
+                + " (instance_id, log_msg, log_stacktrace, log_time) "
                 + " VALUES (?, ?, ?, ?)";
 
         log.debug("Adding logEntry for instanceId [" + instanceId + "], "
-                + "logMsg [" + logEntry.getMessage() + "], throwable set [" + logEntry.getThrowable().isPresent()
+                + "logMsg [" + logEntry.getMessage() + "], throwable set [" + logEntry.getStackTrace().isPresent()
                 + "]");
 
         try (Connection sqlConnection = _dataSource.getConnection();
@@ -595,7 +487,7 @@ public class ScheduledTaskRepository {
 
             pStmt.setString(1, instanceId);
             pStmt.setString(2, logEntry.getMessage());
-            pStmt.setString(3, logEntry.getThrowable().orElse(null));
+            pStmt.setString(3, logEntry.getStackTrace().orElse(null));
             pStmt.setTimestamp(4, Timestamp.valueOf(logEntry.getLogTime()));
             return pStmt.executeUpdate();
         }
@@ -604,16 +496,10 @@ public class ScheduledTaskRepository {
         }
     }
 
-    /**
-     * Get all logEntries for a given schedule run instance.
-     *
-     * @param instanceId
-     *         - InstanceId for the schedule run to add the logs to
-     * @return List<LogEntryDbo> - The logEntries (if any) for that schedule run instance
-     */
+    @Override
     public List<LogEntry> getLogEntries(String instanceId) {
         return getLogEntriesDbo(instanceId).stream()
-                .map(logEntryDbo -> LogEntryImpl.fromDbo(logEntryDbo))
+                .map(ScheduledTaskSqlRepository::fromDbo)
                 .collect(toList());
     }
 
@@ -633,7 +519,7 @@ public class ScheduledTaskRepository {
                     LogEntryDbo logEntry = new LogEntryDbo(
                             result.getString("instance_id"),
                             result.getString("log_msg"),
-                            result.getString("log_throwable"),
+                            result.getString("log_stacktrace"),
                             result.getTimestamp("log_time"));
                     logEntries.add(logEntry);
                 }
@@ -713,7 +599,7 @@ public class ScheduledTaskRepository {
         // while JDBC driver 2 reports 1073741823 and jdbc driver 3.0 reports 2147483647
         // See https://docs.microsoft.com/en-us/sql/connect/jdbc/reference/getcolumns-method-sqlserverdatabasemetadata?view=sql-server-ver15
         // so we set the minimum to 3000
-        inspector.validateColumn("status_throwable", 3000, true,
+        inspector.validateColumn("status_stacktrace", 3000, true,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
         inspector.validateColumn("status_time", false,
@@ -744,12 +630,27 @@ public class ScheduledTaskRepository {
         // while JDBC driver 2 reports 1073741823 and jdbc driver 3.0 reports 2147483647
         // See https://docs.microsoft.com/en-us/sql/connect/jdbc/reference/getcolumns-method-sqlserverdatabasemetadata?view=sql-server-ver15
         // so we set the minimum to 3000
-        inspector.validateColumn("log_throwable", 3000, true,
+        inspector.validateColumn("log_stacktrace", 3000, true,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
         inspector.validateColumn("log_time", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
     }
+
+    private static ScheduleDto fromDbo(ScheduleDbo dbo) {
+        return new ScheduleDto(dbo.getScheduleName(), dbo.isActive(), dbo.isRunOnce(), dbo.getCronExpression(),
+                dbo.getNextRun(), dbo.getLastUpdated());
+    }
+
+    static ScheduledRunDto fromDbo(ScheduledRunDbo dbo) {
+        return new ScheduledRunDto(dbo.getScheduleName(), dbo.getInstanceId(), dbo.getStatus(), dbo.getStatusMsg(),
+                dbo.getStatusThrowable(), dbo.getRunStart(), dbo.getStatusTime());
+    }
+
+    private static LogEntry fromDbo(LogEntryDbo dbo) {
+        return new LogEntry(dbo.getLogMessage(), dbo.getLogThrowable(), dbo.getLogTime());
+    }
+
     // ===== DBO ==============================================================================
 
     /**
@@ -785,11 +686,8 @@ public class ScheduledTaskRepository {
             return runOnce;
         }
 
-        public CronExpression getCronExpression() {
-            return cronExpression == null
-                    ? null
-                    : CronExpression.parse(cronExpression);
-
+        public String getCronExpression() {
+            return cronExpression;
         }
 
         public Instant getNextRun() {
