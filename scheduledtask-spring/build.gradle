@@ -1,0 +1,19 @@
+dependencies {
+    api project(':scheduledtask-api')
+
+    implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
+    implementation "com.storebrand:healthcheck-annotation:$healthCheckVersion"
+
+    implementation project(':scheduledtask-core')
+    implementation project(':scheduledtask-db-sql')
+
+    implementation "org.springframework:spring-context:$springVersion"
+    implementation "javax.inject:javax.inject:$javaxInjectVersion"
+
+    // The SFL4J API. Since you should provide the SLF4J implementation yourself, we use compileOnly.
+    compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
+
+    // Placing logback-classic on testCompile path as we need some form of logging implementation.
+    //testImplementation "org.slf4j:slf4j-api:$slf4jVersion"
+    testRuntimeOnly 'ch.qos.logback:logback-classic:1.2.5'
+}

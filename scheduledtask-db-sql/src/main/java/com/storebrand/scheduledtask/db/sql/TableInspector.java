@@ -186,7 +186,7 @@ class TableInspector {
      */
     public final String getMigrationFileLocation() {
         URL codeSourceLocation = this.getClass().getProtectionDomain().getCodeSource().getLocation();
-        return codeSourceLocation + "com/storebrand/scheduledtask/db/sql" + MIGRATION_FILE_NAME;
+        return codeSourceLocation + "com/storebrand/scheduledtask/db/sql/" + MIGRATION_FILE_NAME;
     }
 
     public final String getMigrationLocationMessage() {

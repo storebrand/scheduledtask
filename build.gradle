@@ -39,6 +39,14 @@ subprojects {
         slf4jVersion = '1.7.35'
         junitVersion = '5.8.2'
         healthCheckVersion = '0.3.+'
+        springVersion = '5.3.15'
+        javaxInjectVersion = '1'
+    }
+
+    dependencies {
+        // Spotbug annotations only required at compiletime
+        compileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
+        testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
     }
 
     project.buildDir = 'build-gradle'
