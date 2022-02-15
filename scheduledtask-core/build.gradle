@@ -4,10 +4,6 @@ dependencies {
     implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
     implementation "com.storebrand:healthcheck-annotation:$healthCheckVersion"
 
-    // Spotbug annotations only required at compiletime
-    compileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
-    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.5.3'
-
     // The SFL4J API. Since you should provide the SLF4J implementation yourself, we use compileOnly.
     compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
 
