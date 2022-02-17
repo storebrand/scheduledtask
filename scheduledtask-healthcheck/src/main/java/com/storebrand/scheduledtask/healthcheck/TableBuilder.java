@@ -1,4 +1,4 @@
-package com.storebrand.scheduledtask;
+package com.storebrand.scheduledtask.healthcheck;
 
 import java.util.ArrayList;
 import java.util.List;

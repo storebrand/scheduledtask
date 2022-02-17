@@ -40,6 +40,13 @@ public interface ScheduledTaskService {
     Map<String, ScheduledTask> getSchedules();
 
     /**
+     * Gets all schedules that are persisted in the current database. These might be different than what is in memory,
+     * as there might be multiple services manipulating the schedules, and we should be able to read the current status
+     * from the database.
+     */
+    List<ScheduleDto> getSchedulesFromRepository();
+
+    /**
      * Helper method that are used to start a given schedule, will be triggering {@link ScheduledTask#start()}
      * @see {@link ScheduledTask#start()}
      */
@@ -118,7 +125,7 @@ public interface ScheduledTaskService {
         void runNow();
 
         /**
-         * Check if this schedule is currently set to to active ie {@link #start()} (default on startup).
+         * Check if this schedule is currently set to active ie {@link #start()} (default on startup).
          * @return
          *          - True: It is executing the supplied runnable.
          *          - False: It is currently set to skip executing the supplied runnable. {@link #stop()}}
@@ -127,9 +134,9 @@ public interface ScheduledTaskService {
         boolean isActive();
 
         /**
-         * Retrun the last run done by the schedule
+         * Return the last run done by the schedule
          */
-        ScheduleRunContext getLastScheduleRun();
+        Optional<ScheduleRunContext> getLastScheduleRun();
 
         /**
          * Retrieve all schedule runs between two dates. This filters by the start time of the schedule runs.
@@ -146,6 +153,11 @@ public interface ScheduledTaskService {
          * Checks if this run is taking longer time than it where expected to use during creation of the schedule.
          */
         boolean isOverdue();
+
+        /**
+         * Returns running time in minutes, if task is running.
+         */
+        Optional<Long> runTimeInMinutes();
 
         /**
          * Set a new cronExpression to be used by the schedule. If this is set to null it will fallback to use the
@@ -393,6 +405,74 @@ public interface ScheduledTaskService {
          */
         public boolean isValid(Instant now) {
             return lockLastUpdatedTime.isAfter(now.minus(5, ChronoUnit.MINUTES));
+        }
+    }
+
+    /**
+     * The schedule settings retrieved from the database.
+     */
+    class ScheduleDto {
+        private final String scheduleName;
+        private final boolean active;
+        private final boolean runOnce;
+        private final String overriddenCronExpression;
+        private final Instant nextRun;
+        private final Instant lastUpdated;
+
+        public ScheduleDto(String scheduleName, boolean active, boolean runOnce, String cronExpression,
+                Instant nextRun, Instant lastUpdated) {
+            this.scheduleName = scheduleName;
+            this.active = active;
+            this.runOnce = runOnce;
+            this.overriddenCronExpression = cronExpression;
+            this.nextRun = nextRun;
+            this.lastUpdated = lastUpdated;
+        }
+
+        /**
+         * The name of the schedule
+         */
+        public String getScheduleName() {
+            return scheduleName;
+        }
+
+        /**
+         * Informs if this schedule is currently active or not. IE is it currently set to execute the runnable part.
+         * It will still "do the loop schedule" except it will skip running the supplied runnable if this is set
+         * to false.
+         */
+        public boolean isActive() {
+            return active;
+        }
+
+        /**
+         * If set to true infroms that this should run now regardless of the schedule, also it should only run now once.
+         * It is used from the monitor when a user clicks the "run now" button, this will be written to the db where the
+         * master node will pick it up and run it as soon as it checks the nextRun instant.
+         */
+        public boolean isRunOnce() {
+            return runOnce;
+        }
+
+        /**
+         * If set informs that this schedule has a new cron expression that differs from the one defined in the code.
+         */
+        public Optional<String> getOverriddenCronExpression() {
+            return Optional.ofNullable(overriddenCronExpression);
+        }
+
+        /**
+         * The instance on when the schedule is set to run next.
+         */
+        public Instant getNextRun() {
+            return nextRun;
+        }
+
+        /**
+         * When this schedule where last updated.
+         */
+        public Instant getLastUpdated() {
+            return lastUpdated;
         }
     }
 }

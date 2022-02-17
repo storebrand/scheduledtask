@@ -1,0 +1,5 @@
+dependencies {
+    api project(':scheduledtask-api')
+
+    implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
+}

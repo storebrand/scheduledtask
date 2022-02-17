@@ -20,13 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.healthcheck.Axis;
-import com.storebrand.healthcheck.CheckSpecification;
-import com.storebrand.healthcheck.Responsible;
-import com.storebrand.healthcheck.annotation.HealthCheck;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
-import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduleDto;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
@@ -39,7 +34,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  */
 public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskServiceImpl.class);
-    private final Map<String, ScheduleTaskImpl> _schedules = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledTaskImpl> _schedules = new ConcurrentHashMap<>();
 
     private static final String MONITOR_CHANGE_ACTIVE_PARAM = "toggleActive.local";
     private static final String MONITOR_EXECUTE_SCHEDULER = "executeScheduler.local";
@@ -106,42 +101,8 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         // Create the schedule
         // TODO: Handle health checks
-        ScheduleTaskImpl schedule = new ScheduleTaskImpl(schedulerName, cronExpression,
-                Axis.DEGRADED_PARTIAL, _masterLock, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
-        _schedules.put(schedulerName, schedule);
-        return schedule;
-    }
-
-    /**
-     * Create a new schedule that will run at the given {@link CronExpression}.
-     *
-     * @param schedulerName
-     *         - Name of the schedule
-     * @param cronExpression
-     *         - When this schedule should run.
-     * @param healthCheckLevel
-     *         - If schedule fails what {@link Axis} should it report on {@link HealthCheck}.
-     * @param maxExpectedMinutes
-     *         - Amount of minutes this should run.
-     * @param runnable
-     *         - The runnable that this schedule should run.
-     */
-    // TODO: Handle healthchecks
-    @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
-            + "always uses Temporal LocalDateTime and is always known.")
-    public ScheduledTask addSchedule(String schedulerName, String cronExpression, Axis healthCheckLevel,
-            int maxExpectedMinutes, ScheduleRunnable runnable) {
-        // In the first insert we can calculate the next run directly since there is no override from db yet
-        CronExpression cronExpressionParsed = CronExpression.parse(cronExpression);
-        LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
-        Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
-
-        // Add the schedule to the database
-        _scheduledTaskRepository.createSchedule(schedulerName, nextRunInstant);
-
-        // Create the schedule
-        ScheduleTaskImpl schedule = new ScheduleTaskImpl(schedulerName, cronExpression,
-                healthCheckLevel, _masterLock, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
+        ScheduledTaskImpl schedule = new ScheduledTaskImpl(schedulerName, cronExpression,
+                _masterLock, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
         _schedules.put(schedulerName, schedule);
         return schedule;
     }
@@ -157,6 +118,11 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     @Override
     public Map<String, ScheduledTask> getSchedules() {
         return _schedules.entrySet().stream().collect(toMap(Entry::getKey, Entry::getValue));
+    }
+
+    @Override
+    public List<ScheduleDto> getSchedulesFromRepository() {
+        return _scheduledTaskRepository.getSchedules();
     }
 
     @Override
@@ -215,113 +181,6 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             entry.getValue().notifyThread();
         });
 
-    }
-
-    // ===== ServerStatus and Monitor ==================================================================================
-    @HealthCheck(name = "Master lock")
-    public void masterLockServerStatus(CheckSpecification spec) {
-        spec.dynamicText(context -> "Running node has the master lock: " + (_masterLock.isMaster() ? "yes" : "no"));
-        // :: Get the status from the db on who has the lock
-        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_PARTIAL, checkContext -> {
-                    Optional<MasterLockDto> masterLock = _masterLock.getMasterLock();
-                    // ?: Is the lock yet unclaimed?
-                    if (!masterLock.isPresent()) {
-                        // -> Yes, nobody has the lock. This means this node is just starting and have not managed
-                        // to claim the lock on the first run yet.
-                        return checkContext.ok("Unclaimed lock");
-                    }
-
-                    // ?: We have a lock but it may be old
-                    if (!masterLock.get().isValid(_clock.instant())) {
-                        // Yes-> it is an old lock
-                        return checkContext.fault("No-one currently has the lock, last node to have it was "
-                                + "[" + masterLock.get().getNodeName() + "]. It was last updated "
-                                + "[" + LocalDateTime.ofInstant(masterLock.get().getLockLastUpdatedTime(), ZoneId.systemDefault()) + "]");
-                    }
-
-                    // ----- Lock flag in db is valid.
-                    return checkContext.ok("The node [" + masterLock.get().getNodeName() + "] has the lock! "
-                            + "It was acquired "
-                            + "[" + LocalDateTime.ofInstant(masterLock.get().getLockTakenTime(), ZoneId.systemDefault()) + "] "
-                            + "and it was last updated ["
-                            + LocalDateTime.ofInstant(masterLock.get().getLockLastUpdatedTime(), ZoneId.systemDefault()) + "]");
-                });
-    }
-
-    @HealthCheck(name = "Scheduled tasks")
-    public void storebrandSchedulesServerStatus(CheckSpecification spec) {
-        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, checkContext -> {
-                    Map<String, ScheduleDto> allSchedulesFromDb = _scheduledTaskRepository.getSchedules().stream()
-                            .collect(toMap(ScheduledTaskRepository.ScheduleDto::getScheduleName, scheduleDto -> scheduleDto));
-                    TableBuilder tableBuilder = new TableBuilder(
-                            "Schedule",
-                            "Active",
-                            "Default cron",
-                            "Running",
-                            "Overdue",
-                            "Status");
-                    boolean failed = false;
-                    for (Entry<String, ScheduleTaskImpl> entry : _schedules.entrySet()) {
-                        boolean scheduleFailed;
-                        // Is this schedule active?
-                        boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
-                        scheduleFailed = !isActive;
-
-                        // has overridden CronExpression / default cron
-                        boolean defaultCron = !allSchedulesFromDb.get(entry.getKey())
-                                .getOverriddenCronExpression().isPresent();
-                        scheduleFailed = scheduleFailed || !defaultCron;
-
-                        // Is this schedule overdue. This is stored in the memory version of the current run.
-                        // It is only overdue if it is active, is running and marked as overdue.
-                        boolean isOverdue = entry.getValue().isOverdue()
-                                && entry.getValue().isActive()
-                                && entry.getValue().isRunning();
-                        scheduleFailed = scheduleFailed || isOverdue;
-
-                        // Add a table row
-                        tableBuilder.addRow(entry.getKey(),
-                                isActive,
-                                defaultCron,
-                                entry.getValue().isRunning(),
-                                isOverdue,
-                                scheduleFailed ? "WARN" : "OK");
-                        failed = failed || scheduleFailed;
-                    }
-                    checkContext.text(tableBuilder.toString());
-                    return checkContext.faultConditionally(failed, "Schedules status");
-                });
-
-        // Add a blank line to add som "air" between the two section
-        spec.staticText("");
-        // Render out based on the set Healthlevel. We check the lastRun to see if this failed or if the schedule is
-        // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
-        // set the defined getHealthCheckLevel() for this schedule.
-        for (Entry<String, ScheduleTaskImpl> entry : _schedules.entrySet()) {
-            spec.check(Responsible.DEVELOPERS, entry.getValue().getHealthCheckLevel(), checkContext -> {
-                Optional<ScheduledRunDto> scheduleFromDb =
-                        _scheduledTaskRepository.getLastRunForSchedule(entry.getKey());
-                boolean runFailed = false;
-                // :? Did the last run fail?
-                if (scheduleFromDb.isPresent() && State.FAILED.equals(scheduleFromDb.get().getStatus())) {
-                    // -> Yes this status failed
-                    runFailed = true;
-                    checkContext.text(entry.getKey() + " last run failed!");
-                }
-
-                Long runTime = entry.getValue().runTimeInMinutes().orElse(0L);
-                int wayOverdueTime = 10 * entry.getValue().getMaxExpectedMinutesToRun();
-                // :? Is this schedule way overdue?
-                if (runTime > 10 * wayOverdueTime) {
-                    // -> Yes this run has taken 10 times the estimated amount so we should display the HealthCheckLevel
-                    runFailed = true;
-                    checkContext.text(entry.getKey() + " is taking more than 10x the estimated runtime!");
-                }
-
-                return checkContext.faultConditionally(runFailed, entry.getKey() + " last run status");
-
-            });
-        }
     }
 
     // ===== MasterLock and Schedule ===================================================================================
@@ -461,10 +320,12 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
     }
 
+    // ===== Helper class ==========================================================================================
+
     /**
      * The schedule class that is responsible of handling when it should run, sleep, pause and shutting down.
      */
-    static class ScheduleTaskImpl implements ScheduledTask {
+    static class ScheduledTaskImpl implements ScheduledTask {
         private final String _schedulerName;
         private Thread _runner;
         private final ScheduleRunnable _runnable;
@@ -482,22 +343,20 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         private final Object _syncObject = new Object();
         private final MasterLock _masterLock;
         private final ScheduledTaskRepository _scheduledTaskRepository;
-        private final Axis _healthCheckLevel;
         private final Clock _clock;
 
-        ScheduleTaskImpl(String schedulerName, String cronExpression,
-                Axis healthCheckLevel, MasterLock masterLock, ScheduledTaskRepository scheduledTaskRepository,
+        ScheduledTaskImpl(String schedulerName, String cronExpression,
+                MasterLock masterLock, ScheduledTaskRepository scheduledTaskRepository,
                 int maxExpectedMinutes, Clock clock, ScheduleRunnable runnable) {
             _clock = clock;
             _defaultCronExpression = CronExpression.parse(cronExpression);
-            _healthCheckLevel = healthCheckLevel;
             _maxExpectedMinutesToRun = maxExpectedMinutes;
             _schedulerName = schedulerName;
             _masterLock = masterLock;
             _scheduledTaskRepository = scheduledTaskRepository;
             _runnable = runnable;
             log.info("Starting Thread '" + schedulerName + "' with the cronExpression '" + cronExpression + "'.");
-            _runner = new Thread(() -> ScheduleTaskImpl.this.runner(),
+            _runner = new Thread(() -> ScheduledTaskImpl.this.runner(),
                     "ScheduledTask thread '" + schedulerName + "'");
             _runner.start();
 
@@ -534,7 +393,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                                         ? SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS
                                         : millisToWait;
                                 synchronized (_syncObject) {
-                                    log.debug("Thread '" + ScheduleTaskImpl.this._schedulerName + "', "
+                                    log.debug("Thread '" + ScheduledTaskImpl.this._schedulerName + "', "
                                             + " master node '" + Host.getLocalHostName() + "' "
                                             + "is going to sleep for '" + millisToWait
                                             + "' ms and wait for the next schedule run.");
@@ -546,7 +405,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                             // -> No, we are not master, so we should sleep for 15min or until we are master and
                             // are awoken again
                             synchronized (_syncObject) {
-                                log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + "', "
+                                log.info("Thread '" + ScheduledTaskImpl.this._schedulerName + "', "
                                         + " slave node '" + Host.getLocalHostName() + "' "
                                         + "is going to sleep for 15 min.");
                                 _syncObject.wait(15 * 60 * 1_000);
@@ -554,7 +413,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         }
 
                         // We have exited the sleep.
-                        log.debug("Thread '" + ScheduleTaskImpl.this._schedulerName
+                        log.debug("Thread '" + ScheduledTaskImpl.this._schedulerName
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " exited the sleep.");
                         _isRunning = true;
@@ -562,7 +421,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         // ?: Check again for runThreads - as this will happen in shutdown
                         if (!_runFlag) {
                             // -> Yes, we're stopping.
-                            log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
+                            log.info("Thread '" + ScheduledTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
                                     + " is exiting the schedule loop.");
                             _isRunning = false;
@@ -573,7 +432,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         if (!_masterLock.isMaster()) {
                             Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
 
-                            log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
+                            log.info("Thread '" + ScheduledTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
                                     + " is not currently master so restarting sleep loop, next run is set"
                                     + " to '" + nextRun + "'");
@@ -599,7 +458,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         if (_runOnce) {
                             // -> Yes, we should only run once and then continue on the normal schedule plans.
                             _scheduledTaskRepository.setRunOnce(_schedulerName, false);
-                            log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
+                            log.info("Thread '" + ScheduledTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
                                     + " is set to run once (NOW) and then continue as set in "
                                     + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
@@ -610,7 +469,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         if (Instant.now(_clock).isBefore(_nextRun)) {
                             // -> No, we have not yet passed the nextRun (now is still before nextRun)
                             // so we should do another sleep cycle.
-                            log.debug("Thread '" + ScheduleTaskImpl.this._schedulerName
+                            log.debug("Thread '" + ScheduledTaskImpl.this._schedulerName
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
                                     + " has to sleep a bit longer "
                                     + "since we have not passed the nextRun instance.");
@@ -620,7 +479,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
                         // ----- _runFlag is still true, we are master, and nextRun is after the now(),
                         // exit the SLEEP_LOOP And run the schedule
-                        log.debug("Thread '" + ScheduleTaskImpl.this._schedulerName
+                        log.debug("Thread '" + ScheduledTaskImpl.this._schedulerName
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " is master and nextRun has passed now() exiting SLEEP_LOOP to do the schedule run ");
                         break SLEEP_LOOP;
@@ -628,10 +487,10 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
                     // ?: Finally we have an option to pause the schedule, this works by only bypassing the run part and
                     // doing a new sleep cycle to the next run.
-                    if (!ScheduleTaskImpl.this._active) {
+                    if (!ScheduledTaskImpl.this._active) {
                         // -> No, we have paused the schedule so we should skip this run and do another sleep cycle.
                         Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
-                        log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
+                        log.info("Thread '" + ScheduledTaskImpl.this._schedulerName
                                 + "' is currently deactivated so "
                                 + "we are skipping this run and setting next run to '" + nextRun + "'");
                         _scheduledTaskRepository.updateNextRun(_schedulerName, getOverrideExpressionAsString(), nextRun);
@@ -643,17 +502,17 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     // ----- We have not updated the cronExpression or the cronExpression is updated to be before the
                     // previous set one. In any regards we have passed the moment where the schedule should run and we
                     // have verified that we should not stop/skip the schedule
-                    log.info("Thread '" + ScheduleTaskImpl.this._schedulerName
+                    log.info("Thread '" + ScheduledTaskImpl.this._schedulerName
                             + "' is beginning to do the run according "
                             + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
                     _currentRunStarted = Instant.now(_clock);
-                    ScheduleRunContext ctx = new MyScheduleRunContext(ScheduleTaskImpl.this,
+                    ScheduleRunContext ctx = new MyScheduleRunContext(ScheduledTaskImpl.this,
                             createInstanceId(), _scheduledTaskRepository, _clock, _currentRunStarted);
                         _scheduledTaskRepository.addScheduleRun(_schedulerName, ctx.instanceId(),
                                 _currentRunStarted, "Schedule run starting.");
 
                     // ?: Is this schedule manually triggered? Ie set to run once.
-                    if (ScheduleTaskImpl.this._runOnce) {
+                    if (ScheduledTaskImpl.this._runOnce) {
                         // -> Yes, this where set to run once and is manually triggered. so add a log line.
                         // note, this is named runNow in the gui but runOnce in the db so we use the term used
                         // in gui for the logging.
@@ -679,7 +538,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
                     _isRunning = false;
                     Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
-                    log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + "' "
+                    log.info("Thread '" + ScheduledTaskImpl.this._schedulerName + "' "
                             + " instanceId '" + ctx.instanceId() + "' "
                             + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
                             + "ms to run. Setting next run to '" + nextRun + "', "
@@ -692,21 +551,21 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     // ?: Check again for runThreads - as this will happen in shutdown
                     if (!_runFlag) {
                         // -> Yes, we're stopping.
-                        log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + " got '" + t.getClass()
+                        log.info("Thread '" + ScheduledTaskImpl.this._schedulerName + " got '" + t.getClass()
                                 .getSimpleName()
                                 + "' from the run-loop, but runThread-flag was false, so we're evidently exiting.");
                         _isRunning = false;
                         break;
                     }
 
-                    log.warn("Thread '" + ScheduleTaskImpl.this._schedulerName + " got a '" + t.getClass()
+                    log.warn("Thread '" + ScheduledTaskImpl.this._schedulerName + " got a '" + t.getClass()
                             .getSimpleName()
                             + "' from the run-loop. Chilling a little, then trying again.", t);
                     try {
                         Thread.sleep(5000);
                     }
                     catch (InterruptedException e) {
-                        log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + " got interrupted while "
+                        log.info("Thread '" + ScheduledTaskImpl.this._schedulerName + " got interrupted while "
                                 + "chill-waiting after an Exception when trying to do the schedule run"
                                 + ". Ignoring by looping, thus checking runThread-flag.");
                     }
@@ -715,18 +574,9 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
             // Exiting loop, so clear the runner thread and log that we are now shutting down.
             _runner = null;
-            log.info("Thread '" + ScheduleTaskImpl.this._schedulerName + "' asked to exit, shutting down!");
+            log.info("Thread '" + ScheduledTaskImpl.this._schedulerName + "' asked to exit, shutting down!");
         }
 
-        // ===== Helper class ==========================================================================================
-
-
-        /**
-         * Get the {@link Axis} this should use if the {@link HealthCheck} fails for this schedule.
-         */
-        public Axis getHealthCheckLevel() {
-            return _healthCheckLevel;
-        }
 
         /**
          * Responsible of creating a unique runId for a given run.
@@ -827,9 +677,9 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         @Override
-        public ScheduleRunContext getLastScheduleRun() {
-            return new MyScheduleRunContext(_scheduledTaskRepository.getLastRunForSchedule(_schedulerName).get(),
-                    this, _scheduledTaskRepository, _clock);
+        public Optional<ScheduleRunContext> getLastScheduleRun() {
+            return _scheduledTaskRepository.getLastRunForSchedule(_schedulerName)
+                    .map(lastRun -> new MyScheduleRunContext(lastRun, this, _scheduledTaskRepository, _clock));
         }
 
         @Override
@@ -866,6 +716,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             return runTime.get() >= _maxExpectedMinutesToRun;
         }
 
+       @Override
        public Optional<Long> runTimeInMinutes() {
             // Is this schedule started at all?
             if (_currentRunStarted == null) {
@@ -991,7 +842,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
      * or {@link #failed(String)}
      */
     private static class MyScheduleRunContext implements ScheduleRunContext {
-        private final ScheduleTaskImpl _storebrandSchedule;
+        private final ScheduledTaskImpl _storebrandSchedule;
         private final ScheduledTaskRepository _scheduledTaskRepository;
         private final Clock _clock;
         private final String _instanceId;
@@ -1000,7 +851,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         /**
          * Create a new {@link ScheduleRunContext}, IE a brand new run.
          */
-        MyScheduleRunContext(ScheduleTaskImpl storebrandSchedule, String instanceId,
+        MyScheduleRunContext(ScheduledTaskImpl storebrandSchedule, String instanceId,
                 ScheduledTaskRepository scheduledTaskRepository, Clock clock, Instant runStart) {
             _storebrandSchedule = storebrandSchedule;
             _clock = clock;
@@ -1010,10 +861,10 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         /**
-         * Reload a previous run from the database. This run may also be on going meaning the schedule may still append
+         * Reload a previous run from the database. This run may also be ongoing meaning the schedule may still append
          * logs and set new statuses to the run.
          */
-        private MyScheduleRunContext(ScheduledRunDto scheduledRunDto, ScheduleTaskImpl storebrandSchedule,
+        private MyScheduleRunContext(ScheduledRunDto scheduledRunDto, ScheduledTaskImpl storebrandSchedule,
                 ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
             _storebrandSchedule = storebrandSchedule;
             _clock = clock;

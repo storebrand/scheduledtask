@@ -1,9 +1,6 @@
 dependencies {
     api project(':scheduledtask-api')
 
-    implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
-    implementation "com.storebrand:healthcheck-annotation:$healthCheckVersion"
-
     // The SFL4J API. Since you should provide the SLF4J implementation yourself, we use compileOnly.
     compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
 
