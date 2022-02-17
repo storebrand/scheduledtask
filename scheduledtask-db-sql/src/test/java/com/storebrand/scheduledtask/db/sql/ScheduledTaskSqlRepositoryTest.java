@@ -25,7 +25,7 @@ import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository.ScheduledRunDbo;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduleDto;
+import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 
 /**

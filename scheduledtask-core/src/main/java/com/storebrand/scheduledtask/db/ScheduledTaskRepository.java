@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 
@@ -179,74 +180,6 @@ public interface ScheduledTaskRepository {
     List<LogEntry> getLogEntries(String instanceId);
 
     // ===== DTOs ======================================================================================================
-
-    /**
-     * The schedule settings retrieved from the database.
-     */
-    class ScheduleDto {
-        private final String scheduleName;
-        private final boolean active;
-        private final boolean runOnce;
-        private final String overriddenCronExpression;
-        private final Instant nextRun;
-        private final Instant lastUpdated;
-
-        public ScheduleDto(String scheduleName, boolean active, boolean runOnce, String cronExpression,
-                Instant nextRun, Instant lastUpdated) {
-            this.scheduleName = scheduleName;
-            this.active = active;
-            this.runOnce = runOnce;
-            this.overriddenCronExpression = cronExpression;
-            this.nextRun = nextRun;
-            this.lastUpdated = lastUpdated;
-        }
-
-        /**
-         * The name of the schedule
-         */
-        public String getScheduleName() {
-            return scheduleName;
-        }
-
-        /**
-         * Informs if this schedule is currently active or not. IE is it currently set to execute the runnable part.
-         * It will still "do the loop schedule" except it will skip running the supplied runnable if this is set
-         * to false.
-         */
-        public boolean isActive() {
-            return active;
-        }
-
-        /**
-         * If set to true infroms that this should run now regardless of the schedule, also it should only run now once.
-         * It is used from the monitor when a user clicks the "run now" button, this will be written to the db where the
-         * master node will pick it up and run it as soon as it checks the nextRun instant.
-         */
-        public boolean isRunOnce() {
-            return runOnce;
-        }
-
-        /**
-         * If set informs that this schedule has a new cron expression that differs from the one defined in the code.
-         */
-        public Optional<String> getOverriddenCronExpression() {
-            return Optional.ofNullable(overriddenCronExpression);
-        }
-
-        /**
-         * The instance on when the schedule is set to run next.
-         */
-        public Instant getNextRun() {
-            return nextRun;
-        }
-
-        /**
-         * When this schedule where last updated.
-         */
-        public Instant getLastUpdated() {
-            return lastUpdated;
-        }
-    }
 
     /**
      * Holds the information on a current or previous run.

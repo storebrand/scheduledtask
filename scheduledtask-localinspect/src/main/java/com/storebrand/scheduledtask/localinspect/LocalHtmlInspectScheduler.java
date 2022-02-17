@@ -1,4 +1,4 @@
-package com.storebrand.scheduledtask;
+package com.storebrand.scheduledtask.localinspect;
 
 import static java.util.stream.Collectors.toList;
 
@@ -17,12 +17,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
-import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -32,6 +32,12 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * To use this you need to include the {@link #getJavascript(Writer)}, {@link #getStyleSheet(Writer)} and
  * {@link #createSchedulesOverview(Writer)}. The last part is to render the show runs sections that displays
  * historic runs for a schedule by using {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}
+ * <p>
+ * For now, this has been developed with a dependency on Bootstrap 3.4.1 and JQuery 1.12.4. This will be improved, so
+ * the entire HTML interface is self-contained.
+ *
+ * @author Dag Bertelsen
+ * @author Kristian Hiim
  */
 public class LocalHtmlInspectScheduler {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -178,7 +184,7 @@ public class LocalHtmlInspectScheduler {
         // Styling for the modal box:
         out.write(".log-modal-header ~ .log-modal-box {"
                 + "    position: fixed;"
-                + "    z-index: 1;"
+                + "    z-index: 3;"
                 + "    left: 0;"
                 + "    top: 0;"
                 + "    width: 100%;"
@@ -242,11 +248,11 @@ public class LocalHtmlInspectScheduler {
      *     <li>{@link #MONITOR_SHOW_LOGS} - InstanceId to show the logs for, note the scheduleName must also be set.
      *     is used with {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}</li>
      *     <li>{@link #MONITOR_CHANGE_ACTIVE_PARAM} - If set is used to toggle the active state with
-     *     {@link Monitor_Scheduler#toggleActive(String)}</li>
+     *     {@link #toggleActive(String)}</li>
      *     <li>{@link #MONITOR_EXECUTE_SCHEDULER} - If set is used to trigger the schedule to run now. Used with
-     *     {@link Monitor_Scheduler#triggerSchedule(String)}</li>
+     *     {@link #triggerSchedule(String)}</li>
      *     <li>{@link #MONITOR_CHANGE_CRON} and {@link #MONITOR_CHANGE_CRON_SCHEDULER_NAME} - Both will be set
-     *     when a cron schedule is to be changed. Used with {@link Monitor_Scheduler#changeChronSchedule(String, CronExpression)}</li>
+     *     when a cron schedule is to be changed. Used with {@link #changeChronSchedule(String, String)}</li>
      * </ul>
      */
     public void createSchedulesOverview(Writer out) throws IOException {
@@ -586,7 +592,61 @@ public class LocalHtmlInspectScheduler {
         out.write("</tr>");
     }
 
-    // ===== DTO's ===================================================================================
+    // ===== Actions ===================================================================================
+
+    /**
+     * Toggles the {@link ScheduledTask#isActive()} flag for one schedule. Setting this to false will temporarily
+     * disable the execution of the supplied runnable for the schedule.
+     */
+    public void toggleActive(String scheduleName) {
+        _scheduledTaskService.getSchedules().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+            // Toggle the state
+            if (scheduled.isActive()) {
+                scheduled.stop();
+            }
+            else {
+                scheduled.start();
+            }
+            return scheduled;
+        });
+    }
+
+    /**
+     * Will trigger a schedule run for a schedule. Note if this is triggered on a node that is not master
+     * it can take up to 2 min before it will trigger due to it has to notify the master to run it now
+     * via the db and the master node check the db every 2 min.
+     */
+    public void triggerSchedule(String scheduleName) {
+        _scheduledTaskService.getSchedules().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+            scheduled.runNow();
+            return scheduled;
+        });
+    }
+
+    /**
+     * Sets a new cron expression for a schedule.
+     * To reset it to the default schedule set this to <b>null</b> or an empty string.
+     */
+    public void changeChronSchedule(String scheduleName, String cronExpression) {
+        String newCron;
+        // ?: Is the cronExpression set and does it have a value? If it does it mean we should expect it to be
+        // a valid cronExpression.
+        if (cronExpression != null && !cronExpression.trim().isEmpty()) {
+            // -> Yes, this should be a valid cronExpression, and we should use this as an override.
+            newCron = cronExpression.trim();
+        }
+        else {
+            // E-> No, the cronExpression is either null or empty, meaning we should remove any override
+            // cronExpressions and use the default one.
+            newCron = null;
+        }
+        _scheduledTaskService.getSchedules().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+            scheduled.setOverrideExpression(newCron);
+            return scheduled;
+        });
+    }
+
+    // ===== DTOs ===================================================================================
     public static class MonitorScheduleDto {
         private final String schedulerName;
         private final boolean active;
@@ -799,9 +859,7 @@ public class LocalHtmlInspectScheduler {
 
         public boolean hasLogsThrowable() {
             return logEntries.stream()
-                    .filter(MonitorHistoricRunLogEntryDto::hasStackTrace)
-                    .findFirst()
-                    .isPresent();
+                    .anyMatch(MonitorHistoricRunLogEntryDto::hasStackTrace);
         }
 
         public String getLastLogMessage() {
@@ -877,7 +935,7 @@ public class LocalHtmlInspectScheduler {
      *
      * <p>Copied from https://stackoverflow.com/questions/1265282/what-is-the-recommended-way-to-escape-html-symbols-in-plain-java
      */
-    public static String escapeHtml(String s) {
+    private static String escapeHtml(String s) {
         StringBuilder out = new StringBuilder(Math.max(16, s.length()));
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);

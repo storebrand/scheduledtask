@@ -1,8 +1,7 @@
 dependencies {
     api project(':scheduledtask-api')
 
-    implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
-    implementation "com.storebrand:healthcheck-annotation:$healthCheckVersion"
+//    implementation "com.storebrand:healthcheck-api:$healthCheckVersion"
 
     implementation project(':scheduledtask-core')
     implementation project(':scheduledtask-db-sql')

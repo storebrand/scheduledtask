@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;

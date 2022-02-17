@@ -3,4 +3,6 @@ include 'scheduledtask-api'
 include 'scheduledtask-core'
 include 'scheduledtask-db-sql'
 include 'scheduledtask-spring'
+include 'scheduledtask-localinspect'
+include 'scheduledtask-healthcheck'
 
