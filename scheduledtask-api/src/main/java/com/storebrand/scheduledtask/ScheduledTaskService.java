@@ -30,6 +30,17 @@ public interface ScheduledTaskService {
     ScheduledTask addSchedule(String scheduleName, String cronExpression, int maxExpectedMinutes, ScheduleRunnable runnable);
 
     /**
+     * Create a new schedule that will run at the given cron expression.
+     *
+     * @param config
+     *         - configuration for this schedule, including name, cron expression, criticality, recovery and retention.
+     * @param runnable
+     *         - The runnable that this schedule should run.
+     * @return the scheduled task
+     */
+    ScheduledTask addSchedule(ScheduledTaskConfig config, ScheduleRunnable runnable);
+
+    /**
      * Get a schedule with a specific name.
      */
     ScheduledTask getSchedule(String scheduleName);
@@ -101,6 +112,11 @@ public interface ScheduledTaskService {
          * Retrieve the name of the running schedule
          */
         String getScheduleName();
+
+        /**
+         * Get the configuration for this schedule
+         */
+        ScheduledTaskConfig getConfig();
 
         /**
          * Sets this schedule to active meaning it will start executing the supplied runnable

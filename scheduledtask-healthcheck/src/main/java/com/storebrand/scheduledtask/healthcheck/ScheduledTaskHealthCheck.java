@@ -1,19 +1,27 @@
 package com.storebrand.scheduledtask.healthcheck;
 
 import static java.util.stream.Collectors.toMap;
+import static java.util.stream.Collectors.toSet;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Stream;
 
 import com.storebrand.healthcheck.Axis;
 import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.HealthCheckMetadata;
 import com.storebrand.healthcheck.HealthCheckRegistry;
 import com.storebrand.healthcheck.Responsible;
+import com.storebrand.scheduledtask.ScheduledTaskConfig.Criticality;
+import com.storebrand.scheduledtask.ScheduledTaskConfig.Recovery;
 import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
@@ -27,6 +35,20 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * Health checks for scheduled tasks, provided by the Storebrand HealthCheck library.
  */
 public class ScheduledTaskHealthCheck {
+
+    private static final Map<Criticality, Set<Axis>> CRITICALITY_AXES;
+    static {
+        Map<Criticality, Set<Axis>> criticalityAxes = new HashMap<>();
+        criticalityAxes.put(Criticality.MISSION_CRITICAL,
+                Stream.of(Axis.CRITICAL_WAKE_PEOPLE_UP, Axis.DEGRADED_COMPLETE).collect(toSet()));
+        criticalityAxes.put(Criticality.VITAL,
+                Stream.of(Axis.DEGRADED_COMPLETE).collect(toSet()));
+        criticalityAxes.put(Criticality.IMPORTANT,
+                Stream.of(Axis.DEGRADED_PARTIAL).collect(toSet()));
+        criticalityAxes.put(Criticality.MINOR,
+                Stream.of(Axis.DEGRADED_MINOR).collect(toSet()));
+        CRITICALITY_AXES = Collections.unmodifiableMap(criticalityAxes);
+    }
 
     private final ScheduledTaskService _scheduledTaskService;
     private final Clock _clock;
@@ -54,25 +76,25 @@ public class ScheduledTaskHealthCheck {
     public void masterLockHealthCheck(CheckSpecification spec) {
         spec.dynamicText(context -> "Running node has the master lock: " + (_scheduledTaskService.hasMasterLock() ? "yes" : "no"));
         // :: Get the status from the db on who has the lock
-        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_PARTIAL, checkContext -> {
+        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_PARTIAL, context -> {
             Optional<MasterLockDto> masterLock = _scheduledTaskService.getMasterLock();
             // ?: Is the lock yet unclaimed?
             if (!masterLock.isPresent()) {
                 // -> Yes, nobody has the lock. This means this node is just starting and have not managed
                 // to claim the lock on the first run yet.
-                return checkContext.ok("Unclaimed lock");
+                return context.ok("Unclaimed lock");
             }
 
             // ?: We have a lock but it may be old
             if (!masterLock.get().isValid(_clock.instant())) {
                 // Yes-> it is an old lock
-                return checkContext.fault("No-one currently has the lock, last node to have it was "
+                return context.fault("No-one currently has the lock, last node to have it was "
                         + "[" + masterLock.get().getNodeName() + "]. It was last updated "
                         + "[" + LocalDateTime.ofInstant(masterLock.get().getLockLastUpdatedTime(), ZoneId.systemDefault()) + "]");
             }
 
             // ----- Lock flag in db is valid.
-            return checkContext.ok("The node [" + masterLock.get().getNodeName() + "] has the lock! "
+            return context.ok("The node [" + masterLock.get().getNodeName() + "] has the lock! "
                     + "It was acquired "
                     + "[" + LocalDateTime.ofInstant(masterLock.get().getLockTakenTime(), ZoneId.systemDefault()) + "] "
                     + "and it was last updated ["
@@ -84,7 +106,7 @@ public class ScheduledTaskHealthCheck {
      * Health checks for verifying that scheduled tasks run as expected.
      */
     public void scheduledTaskHealthCheck(CheckSpecification spec) {
-        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, checkContext -> {
+        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
             Map<String, ScheduleDto> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository().stream()
                     .collect(toMap(ScheduledTaskService.ScheduleDto::getScheduleName, scheduleDto -> scheduleDto));
             TableBuilder tableBuilder = new TableBuilder(
@@ -122,8 +144,8 @@ public class ScheduledTaskHealthCheck {
                         scheduleFailed ? "WARN" : "OK");
                 failed = failed || scheduleFailed;
             }
-            checkContext.text(tableBuilder.toString());
-            return checkContext.faultConditionally(failed, "Schedules status");
+            context.text(tableBuilder.toString());
+            return context.faultConditionally(failed, "Schedules status");
         });
 
         // Add a blank line to add som "air" between the two section
@@ -132,8 +154,11 @@ public class ScheduledTaskHealthCheck {
         // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
         // set the defined getHealthCheckLevel() for this schedule.
         for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
-            // TODO: Define Axis
-            spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, checkContext -> {
+            Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getConfig().getCriticality()));
+            if (entry.getValue().getConfig().getRecovery() == Recovery.MANUAL_INTERVENTION) {
+                axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);
+            }
+            spec.check(Responsible.DEVELOPERS, axes.toArray(new Axis[]{}), context -> {
                 Optional<ScheduleRunContext> lastRunForSchedule =
                         entry.getValue().getLastScheduleRun();
                 boolean runFailed = false;
@@ -141,7 +166,7 @@ public class ScheduledTaskHealthCheck {
                 if (lastRunForSchedule.isPresent() && State.FAILED.equals(lastRunForSchedule.get().getStatus())) {
                     // -> Yes this status failed
                     runFailed = true;
-                    checkContext.text(entry.getKey() + " last run failed!");
+                    context.text(entry.getKey() + " last run failed!");
                 }
 
                 Long runTime = entry.getValue().runTimeInMinutes().orElse(0L);
@@ -150,10 +175,10 @@ public class ScheduledTaskHealthCheck {
                 if (runTime > 10 * wayOverdueTime) {
                     // -> Yes this run has taken 10 times the estimated amount so we should display the HealthCheckLevel
                     runFailed = true;
-                    checkContext.text(entry.getKey() + " is taking more than 10x the estimated runtime!");
+                    context.text(entry.getKey() + " is taking more than 10x the estimated runtime!");
                 }
 
-                return checkContext.faultConditionally(runFailed, entry.getKey() + " last run status");
+                return context.faultConditionally(runFailed, entry.getKey() + " last run status");
 
             });
         }
