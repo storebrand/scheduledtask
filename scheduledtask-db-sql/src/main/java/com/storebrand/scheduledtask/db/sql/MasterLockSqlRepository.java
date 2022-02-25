@@ -1,7 +1,5 @@
 package com.storebrand.scheduledtask.db.sql;
 
-import static java.util.stream.Collectors.toList;
-
 import java.sql.Connection;
 import java.sql.JDBCType;
 import java.sql.PreparedStatement;
@@ -12,6 +10,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,7 +19,7 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
+import com.storebrand.scheduledtask.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
@@ -34,7 +33,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * <p>
  * After a lock has been acquired for a node it has to do the {@link #keepLock(String, String)} within the next 5 min
  * in order to be allowed to keep it. If it does not update withing that timespan it has to wait until the
- * {@link MasterLockDbo#getLockLastUpdatedTime()} is over 10 min old before any node can acquire it again. This means
+ * {@link MasterLockDto#getLockLastUpdatedTime()} is over 10 min old before any node can acquire it again. This means
  * there is a 5 min gap where no node can aquire the lock at all.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
@@ -156,29 +155,29 @@ public class MasterLockSqlRepository implements MasterLockRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public List<MasterLockDto> getLocks() throws SQLException {
+    public List<MasterLock> getLocks() throws SQLException {
         String sql = "SELECT * FROM " + MASTER_LOCK_TABLE;
 
         try (Connection sqlConnection = _dataSource.getConnection();
             PreparedStatement pStmt = sqlConnection.prepareStatement(sql);
              ResultSet result = pStmt.executeQuery()) {
 
-            List<MasterLockDbo> masterLocks = new ArrayList<>();
+            List<MasterLockDto> masterLocks = new ArrayList<>();
             while (result.next()) {
-                MasterLockDbo row = new MasterLockDbo(
+                MasterLockDto row = new MasterLockDto(
                         result.getString("lock_name"),
                         result.getString("node_name"),
                         result.getTimestamp("lock_taken_time"),
                         result.getTimestamp("lock_last_updated_time"));
                 masterLocks.add(row);
             }
-            return masterLocks.stream().map(MasterLockSqlRepository::fromDbo).collect(toList());
+            return Collections.unmodifiableList(masterLocks);
          }
     }
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public Optional<MasterLockDto> getLock(String lockName) {
+    public Optional<MasterLock> getLock(String lockName) {
         String sql = "SELECT * FROM " + MASTER_LOCK_TABLE
                 + " WHERE lock_name = ? ";
         try (Connection sqlConnection = _dataSource.getConnection();
@@ -188,12 +187,12 @@ public class MasterLockSqlRepository implements MasterLockRepository {
                 // ?: Did we find any row?
                 if (result.first()) {
                     // -> Yes we found the first row
-                    MasterLockDbo dbo = new MasterLockDbo(
+                    MasterLockDto dbo = new MasterLockDto(
                             result.getString("lock_name"),
                             result.getString("node_name"),
                             result.getTimestamp("lock_taken_time"),
                             result.getTimestamp("lock_last_updated_time"));
-                    return Optional.of(fromDbo(dbo));
+                    return Optional.of(dbo);
                 }
 
                 // E-> No, we did not find anything
@@ -242,29 +241,22 @@ public class MasterLockSqlRepository implements MasterLockRepository {
 
     }
 
-    // ===== DBO ==============================================================================
-
-    static MasterLockDto fromDbo(MasterLockDbo dbo) {
-        return new MasterLockDto(dbo.getLockName(),
-                dbo.getNodeName(),
-                dbo.getLockTakenTime(),
-                dbo.getLockLastUpdatedTime());
-    }
+    // ===== DTO ==============================================================================
 
     /**
      * Simple DTO class that represents a master lock.
      */
-    public static class MasterLockDbo {
+    public static class MasterLockDto implements MasterLock {
         private final String lockName;
         private final String nodeName;
-        private final Timestamp lockTakenTime;
-        private final Timestamp lockLastUpdatedTime;
+        private final Instant lockTakenTime;
+        private final Instant lockLastUpdatedTime;
 
-        MasterLockDbo(String lockName, String nodeName, Timestamp lockTakenTime, Timestamp lockLastUpdatedTime) {
+        MasterLockDto(String lockName, String nodeName, Timestamp lockTakenTime, Timestamp lockLastUpdatedTime) {
             this.lockName = lockName;
             this.nodeName = nodeName;
-            this.lockTakenTime = lockTakenTime;
-            this.lockLastUpdatedTime = lockLastUpdatedTime;
+            this.lockTakenTime = lockTakenTime.toInstant();
+            this.lockLastUpdatedTime = lockLastUpdatedTime.toInstant();
         }
 
         public String getLockName() {
@@ -276,11 +268,16 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         }
 
         public Instant getLockTakenTime() {
-            return lockTakenTime.toInstant();
+            return lockTakenTime;
         }
 
         public Instant getLockLastUpdatedTime() {
-            return lockLastUpdatedTime.toInstant();
+            return lockLastUpdatedTime;
+        }
+
+        @Override
+        public boolean isValid(Instant now) {
+            return lockLastUpdatedTime.isAfter(now.minus(5, ChronoUnit.MINUTES));
         }
     }
 }

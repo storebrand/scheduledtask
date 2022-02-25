@@ -17,11 +17,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
+import com.storebrand.scheduledtask.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -263,7 +263,7 @@ public class LocalHtmlInspectScheduler {
 
         // Create a description informing of node that has the master lock.
         String masterNodeDescription;
-        Optional<MasterLockDto> masterLock = _scheduledTaskService.getMasterLock();
+        Optional<MasterLock> masterLock = _scheduledTaskService.getMasterLock();
         // ?: did we find any lock?
         if (!masterLock.isPresent()) {
             // -> No, nobody has the lock

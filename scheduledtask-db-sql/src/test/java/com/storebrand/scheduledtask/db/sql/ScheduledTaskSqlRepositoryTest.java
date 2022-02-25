@@ -21,11 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository.ScheduledRunDbo;
-import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 
 /**
@@ -37,34 +37,40 @@ public class ScheduledTaskSqlRepositoryTest {
     private final JdbcTemplate _jdbcTemplate;
     private final DataSource _dataSource;
     private final ClockMock _clock = new ClockMock();
-    static final String STOREBRAND_SCHEDULE_CREATE_SQL = "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_TASK_TABLE + " ( "
-            + " schedule_name VARCHAR NOT NULL, "
-            + " is_active BIT NOT NULL, "
-            + " run_once BIT NOT NULL, "
-            + " cron_expression VARCHAR NULL, "
-            + " next_run DATETIME2 NOT NULL, "
-            + " last_updated DATETIME2 NOT NULL, "
-            + " CONSTRAINT PK_schedule_name PRIMARY KEY (schedule_name) "
-            + " );";
+    static final String STOREBRAND_SCHEDULE_CREATE_SQL =
+            "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_TASK_TABLE + " ( "
+                    + " schedule_name VARCHAR NOT NULL, "
+                    + " is_active BIT NOT NULL, "
+                    + " run_once BIT NOT NULL, "
+                    + " cron_expression VARCHAR NULL, "
+                    + " next_run DATETIME2 NOT NULL, "
+                    + " last_updated DATETIME2 NOT NULL, "
+                    + " CONSTRAINT PK_schedule_name PRIMARY KEY (schedule_name) "
+                    + " );";
 
-    static final String SCHEDULE_RUN_CREATE_SQL = "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_RUN_TABLE + " ( "
-            + " schedule_name VARCHAR NOT NULL, "
-            + " instance_id VARCHAR NOT NULL, "
-            + " run_start DATETIME2 NOT NULL, "
-            + " status VARCHAR NULL, "
-            + " status_msg VARCHAR NULL, "
-            + " status_stacktrace VARCHAR NULL, "
-            + " status_time DATETIME2 NOT NULL, "
-            + " CONSTRAINT PK_instance_id PRIMARY KEY (instance_id) "
-            + " );";
+    static final String SCHEDULE_RUN_CREATE_SQL =
+            "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_RUN_TABLE + " ( "
+                    + " schedule_name VARCHAR NOT NULL, "
+                    + " instance_id VARCHAR NOT NULL, "
+                    + " run_start DATETIME2 NOT NULL, "
+                    + " status VARCHAR NULL, "
+                    + " status_msg VARCHAR NULL, "
+                    + " status_stacktrace VARCHAR NULL, "
+                    + " status_time DATETIME2 NOT NULL, "
+                    + " CONSTRAINT PK_instance_id PRIMARY KEY (instance_id) "
+                    + " );";
 
-    static final String SCHEDULE_LOG_ENTRY_CREATE_SQL = "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_LOG_ENTRY_TABLE + " ( "
-            + " instance_id VARCHAR NOT NULL, "
-            + " log_msg VARCHAR NOT NULL, "
-            + " log_stacktrace VARCHAR NULL, "
-            + " log_time DATETIME2 NOT NULL, "
-            + " CONSTRAINT FK_instance_id FOREIGN KEY (instance_id) REFERENCES stb_schedule_run (instance_id) "
-            + " );";
+    static final String SCHEDULE_RUN_INDEX_CREATE_SQL = "CREATE INDEX IX_stb_schedule_run_name_start_status"
+            + " ON stb_schedule_run (schedule_name, run_start DESC, status);";
+
+    static final String SCHEDULE_LOG_ENTRY_CREATE_SQL =
+            "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_LOG_ENTRY_TABLE + " ( "
+                    + " instance_id VARCHAR NOT NULL, "
+                    + " log_msg VARCHAR NOT NULL, "
+                    + " log_stacktrace VARCHAR NULL, "
+                    + " log_time DATETIME2 NOT NULL, "
+                    + " CONSTRAINT FK_instance_id FOREIGN KEY (instance_id) REFERENCES stb_schedule_run (instance_id) "
+                    + " );";
 
     public ScheduledTaskSqlRepositoryTest() {
         _dataSource = new SingleConnectionDataSource("jdbc:h2:mem:testStorebrandSchedulerDb", true);
@@ -75,6 +81,7 @@ public class ScheduledTaskSqlRepositoryTest {
     public void before() {
         _jdbcTemplate.execute(STOREBRAND_SCHEDULE_CREATE_SQL);
         _jdbcTemplate.execute(SCHEDULE_RUN_CREATE_SQL);
+        _jdbcTemplate.execute(SCHEDULE_RUN_INDEX_CREATE_SQL);
         _jdbcTemplate.execute(SCHEDULE_LOG_ENTRY_CREATE_SQL);
     }
 
@@ -96,7 +103,7 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertEquals(1, created);
-        Optional<ScheduleDto> schedule = schedulerRep.getSchedule("testSchedule");
+        Optional<Schedule> schedule = schedulerRep.getSchedule("testSchedule");
         assertTrue(schedule.isPresent());
         assertEquals(nextRun, schedule.get().getNextRun());
         assertTrue(schedule.get().isActive());
@@ -116,7 +123,7 @@ public class ScheduledTaskSqlRepositoryTest {
         // :: Assert
         assertEquals(1, firstInsert);
         assertEquals(0, secondInsert);
-        Optional<ScheduleDto> schedule = schedulerRep.getSchedule("alreadyExists");
+        Optional<Schedule> schedule = schedulerRep.getSchedule("alreadyExists");
         assertTrue(schedule.isPresent());
         assertEquals(nextRun, schedule.get().getNextRun());
         assertFalse(schedule.get().getOverriddenCronExpression().isPresent());
@@ -139,7 +146,7 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertEquals(1, insertSchedule);
-        Optional<ScheduleDto> schedule = schedulerRep.getSchedule("test-schedule");
+        Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
         assertTrue(schedule.isPresent());
         assertEquals(newNextRun, schedule.get().getNextRun());
         assertEquals("0 2 23 ? * *", schedule.get().getOverriddenCronExpression().orElse(null));
@@ -163,12 +170,12 @@ public class ScheduledTaskSqlRepositoryTest {
         // :: Act
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
         _clock.setFixedClock(updateTime);
-        Optional<ScheduleDto> beforeSettingInactive = schedulerRep.getSchedule("test-schedule");
+        Optional<Schedule> beforeSettingInactive = schedulerRep.getSchedule("test-schedule");
         schedulerRep.setActive("test-schedule", false);
 
         // :: Assert
         assertTrue(beforeSettingInactive.isPresent());
-        Optional<ScheduleDto> afterSetInactive = schedulerRep.getSchedule("test-schedule");
+        Optional<Schedule> afterSetInactive = schedulerRep.getSchedule("test-schedule");
         assertTrue(afterSetInactive.isPresent());
         assertTrue(beforeSettingInactive.get().isActive());
         assertFalse(afterSetInactive.get().isActive());
@@ -191,12 +198,12 @@ public class ScheduledTaskSqlRepositoryTest {
         // :: Act
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
         _clock.setFixedClock(updateTime);
-        Optional<ScheduleDto> beforeSettingRunOnce = schedulerRep.getSchedule("test-schedule");
+        Optional<Schedule> beforeSettingRunOnce = schedulerRep.getSchedule("test-schedule");
         schedulerRep.setRunOnce("test-schedule", true);
 
         // :: Assert
         assertTrue(beforeSettingRunOnce.isPresent());
-        Optional<ScheduleDto> afterSetRunOnce = schedulerRep.getSchedule("test-schedule");
+        Optional<Schedule> afterSetRunOnce = schedulerRep.getSchedule("test-schedule");
         assertTrue(afterSetRunOnce.isPresent());
         assertFalse(beforeSettingRunOnce.get().isRunOnce());
         assertTrue(afterSetRunOnce.get().isRunOnce());
@@ -218,11 +225,11 @@ public class ScheduledTaskSqlRepositoryTest {
         schedulerRep.createSchedule("test-schedule-2", null, initialNextRun);
 
         // :: Act
-        List<ScheduleDto> schedules = schedulerRep.getSchedules();
+        List<Schedule> schedules = schedulerRep.getSchedules();
 
         // :: Assert
         assertEquals(2, schedules.size());
-        Optional<ScheduleDto> schedule1 = schedules.stream()
+        Optional<Schedule> schedule1 = schedules.stream()
                 .filter(scheduleDbo -> "test-schedule-1".equalsIgnoreCase(scheduleDbo.getScheduleName()))
                 .findAny();
         assertTrue(schedule1.isPresent());
@@ -539,11 +546,9 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Act
         LocalDateTime logTime = LocalDateTime.of(2021, 3, 3, 12, 2);
-        LogEntry logEntry = new LogEntry("some log message", logTime);
-        int addCount = schedulerRep.addLogEntry("some-instance-id", logEntry);
+        schedulerRep.addLogEntry("some-instance-id", logTime, "some log message");
 
         // :: Assert
-        assertEquals(1, addCount);
         List<LogEntry> logEntryFromDb = schedulerRep.getLogEntries("some-instance-id");
         assertEquals(1, logEntryFromDb.size());
         assertEquals("some log message", logEntryFromDb.get(0).getMessage());
@@ -562,11 +567,9 @@ public class ScheduledTaskSqlRepositoryTest {
                 nowInstant, "schedule run inserted");
 
         // :: Act
-        LogEntry logEntry = new LogEntry("some log message", "testing throwable", now);
-        int addCount = schedulerRep.addLogEntry("some-instance-id", logEntry);
+        schedulerRep.addLogEntry("some-instance-id", now, "some log message", "testing throwable");
 
         // :: Assert
-        assertEquals(1, addCount);
         List<LogEntry> logEntryFromDb = schedulerRep.getLogEntries("some-instance-id");
         assertEquals(1, logEntryFromDb.size());
         LogEntry firstLogEntry = logEntryFromDb.get(0);
@@ -585,17 +588,15 @@ public class ScheduledTaskSqlRepositoryTest {
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-firs-run",
                 LocalDateTime.of(2021, 3, 3, 12, 1).atZone(ZoneId.systemDefault()).toInstant(),
                 "first run schedule 1");
-        LogEntry logEntry = new LogEntry("some log message",
-                LocalDateTime.of(2021, 3, 3, 12, 2));
-        schedulerRep.addLogEntry("instance-id-firs-run", logEntry);
+        schedulerRep.addLogEntry("instance-id-firs-run", LocalDateTime.of(2021, 3, 3, 12, 2), "some log message");
 
         // second - test-schedule-2
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 10));
         schedulerRep.addScheduleRun("test-schedule-2", "instance-id-second-run",
                 LocalDateTime.of(2021, 3, 3, 12, 10).atZone(ZoneId.systemDefault()).toInstant(),
                 "first run schedule 2");
-        schedulerRep.addLogEntry("instance-id-second-run", new LogEntry("second schedule log entry",
-                LocalDateTime.of(2021, 3, 3, 12, 12)));
+        schedulerRep.addLogEntry("instance-id-second-run", LocalDateTime.of(2021, 3, 3, 12, 12),
+                "second schedule log entry");
 
         // third - test-schedule-1 - this is one we want to get
         LocalDateTime lastInsertTime = LocalDateTime.of(2021, 3, 3, 12, 15);
@@ -604,16 +605,15 @@ public class ScheduledTaskSqlRepositoryTest {
                 LocalDateTime.of(2021, 3, 3, 12, 15).atZone(ZoneId.systemDefault()).toInstant(),
                 "second run schedule 1");
         LocalDateTime lastLogTime = LocalDateTime.of(2021, 3, 3, 12, 16);
-        schedulerRep.addLogEntry("instance-id-thirds-run", new LogEntry("first schedule log entry 2",
-                lastLogTime));
+        schedulerRep.addLogEntry("instance-id-thirds-run", lastLogTime, "first schedule log entry 2");
 
         // forth - test-schedule-2
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 20));
         schedulerRep.addScheduleRun("test-schedule-2", "instance-id-forth-run",
                 LocalDateTime.of(2021, 3, 3, 12, 20).atZone(ZoneId.systemDefault()).toInstant(),
                 "second run schedule 2");
-        schedulerRep.addLogEntry("instance-id-forth-run", new LogEntry("second schedule log entry 2",
-                LocalDateTime.of(2021, 3, 3, 12, 21)));
+        schedulerRep.addLogEntry("instance-id-forth-run", LocalDateTime.of(2021, 3, 3, 12, 21),
+                "second schedule log entry 2");
 
         // :: Act
         Optional<ScheduledRunDto> scheduleRunFromDb = schedulerRep.getLastRunForSchedule("test-schedule-1");
@@ -634,17 +634,15 @@ public class ScheduledTaskSqlRepositoryTest {
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-firs-run",
                 LocalDateTime.of(2021, 3, 3, 12, 1).atZone(ZoneId.systemDefault()).toInstant(),
                 "first run schedule 1");
-        LogEntry logEntry = new LogEntry("some log message",
-                LocalDateTime.of(2021, 3, 3, 12, 2));
-        schedulerRep.addLogEntry("instance-id-firs-run", logEntry);
+        schedulerRep.addLogEntry("instance-id-firs-run", LocalDateTime.of(2021, 3, 3, 12, 2), "some log message");
 
         // second - test-schedule-1
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 10));
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-second-run",
                 LocalDateTime.of(2021, 3, 3, 12, 10).atZone(ZoneId.systemDefault()).toInstant(),
                 "second run schedule 1");
-        schedulerRep.addLogEntry("instance-id-second-run", new LogEntry("first schedule log entry 2",
-                LocalDateTime.of(2021, 3, 3, 12, 12)));
+        schedulerRep.addLogEntry("instance-id-second-run", LocalDateTime.of(2021, 3, 3, 12, 12),
+                "first schedule log entry 2");
 
         // third - test-schedule-1 - get from including
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 15));
@@ -652,32 +650,32 @@ public class ScheduledTaskSqlRepositoryTest {
                 LocalDateTime.of(2021, 3, 3, 12, 15).atZone(ZoneId.systemDefault()).toInstant(),
                 "third run schedule 1");
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 16));
-        schedulerRep.addLogEntry("instance-id-third-run", new LogEntry("first schedule log entry 3",
-                LocalDateTime.of(2021, 3, 3, 12, 16)));
+        schedulerRep.addLogEntry("instance-id-third-run", LocalDateTime.of(2021, 3, 3, 12, 16),
+                "first schedule log entry 3");
 
         // forth - test-schedule-2 - this should not be picked up due to it is another scheduleName
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 20));
         schedulerRep.addScheduleRun("test-schedule-2", "instance-id-forth-run",
                 LocalDateTime.of(2021, 3, 3, 12, 20).atZone(ZoneId.systemDefault()).toInstant(),
                 "first run schedule 2");
-        schedulerRep.addLogEntry("instance-id-forth-run", new LogEntry("second schedule log entry 1",
-                LocalDateTime.of(2021, 3, 3, 12, 20)));
+        schedulerRep.addLogEntry("instance-id-forth-run", LocalDateTime.of(2021, 3, 3, 12, 20),
+                "second schedule log entry 1");
 
         // fifth - test-schedule-1 - get to including
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 25));
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-fifth-run",
-                                LocalDateTime.of(2021, 3, 3, 12, 25).atZone(ZoneId.systemDefault()).toInstant(),
+                LocalDateTime.of(2021, 3, 3, 12, 25).atZone(ZoneId.systemDefault()).toInstant(),
                 "forth run schedule 1");
-        schedulerRep.addLogEntry("instance-id-fifth-run", new LogEntry("first schedule log entry 4",
-                LocalDateTime.of(2021, 3, 3, 12, 25)));
+        schedulerRep.addLogEntry("instance-id-fifth-run", LocalDateTime.of(2021, 3, 3, 12, 25),
+                "first schedule log entry 4");
 
         // sixth - test-schedule-1 - should not be included
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 30));
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-sixth-run",
                 LocalDateTime.of(2021, 3, 3, 12, 30).atZone(ZoneId.systemDefault()).toInstant(),
                 "fifth run schedule 1");
-        schedulerRep.addLogEntry("instance-id-sixth-run", new LogEntry("first schedule log entry 5",
-                LocalDateTime.of(2021, 3, 3, 12, 30)));
+        schedulerRep.addLogEntry("instance-id-sixth-run", LocalDateTime.of(2021, 3, 3, 12, 30),
+                "first schedule log entry 5");
 
         // :: Act
         List<ScheduledRunDto> scheduleRunFromDb = schedulerRep.getScheduleRunsBetween(
@@ -691,14 +689,14 @@ public class ScheduledTaskSqlRepositoryTest {
         assertEquals(1, logEntriesFromDb1.size());
         // Get the second schedule's logEntries
         List<LogEntry> logEntriesFromDb2 = schedulerRep.getLogEntries(scheduleRunFromDb.get(1).getInstanceId());
-        assertEquals("first schedule log entry 3", logEntriesFromDb1.get(0).getMessage());
-        assertEquals("first schedule log entry 4", logEntriesFromDb2.get(0).getMessage());
+        assertEquals("first schedule log entry 3", logEntriesFromDb2.get(0).getMessage());
+        assertEquals("first schedule log entry 4", logEntriesFromDb1.get(0).getMessage());
         assertFalse(logEntriesFromDb1.get(0).getStackTrace().isPresent());
         // Show that the runTime can differ from the logTime
         assertEquals(LocalDateTime.of(2021, 3, 3, 12, 15),
-                scheduleRunFromDb.get(0).getRunStart());
+                scheduleRunFromDb.get(1).getRunStart());
         assertEquals(LocalDateTime.of(2021, 3, 3, 12, 16),
-                logEntriesFromDb1.get(0).getLogTime());
+                logEntriesFromDb2.get(0).getLogTime());
         assertFalse(logEntriesFromDb2.get(0).getStackTrace().isPresent());
 
     }
@@ -714,54 +712,52 @@ public class ScheduledTaskSqlRepositoryTest {
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-firs-run",
                 LocalDateTime.of(2021, 3, 3, 12, 1).atZone(ZoneId.systemDefault()).toInstant(),
                 "first run schedule 1");
-        LogEntry logEntry = new LogEntry("some log message",
-                LocalDateTime.of(2021, 3, 3, 12, 2));
-        schedulerRep.addLogEntry("instance-id-firs-run", logEntry);
+        schedulerRep.addLogEntry("instance-id-firs-run", LocalDateTime.of(2021, 3, 3, 12, 2), "some log message");
 
         // second - test-schedule-1
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-second-run",
                 LocalDateTime.of(2021, 3, 3, 12, 10).atZone(ZoneId.systemDefault()).toInstant(),
                 "second run schedule 1");
-        schedulerRep.addLogEntry("instance-id-second-run", new LogEntry("first schedule log entry 2",
-                LocalDateTime.of(2021, 3, 3, 12, 10)));
+        schedulerRep.addLogEntry("instance-id-second-run", LocalDateTime.of(2021, 3, 3, 12, 10),
+                "first schedule log entry 2");
 
         // third - test-schedule-1
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-third-run",
                 LocalDateTime.of(2021, 3, 3, 12, 15).atZone(ZoneId.systemDefault()).toInstant(),
                 "third run schedule 1");
-        schedulerRep.addLogEntry("instance-id-third-run", new LogEntry("first schedule log entry 3",
-                LocalDateTime.of(2021, 3, 3, 12, 16)));
+        schedulerRep.addLogEntry("instance-id-third-run", LocalDateTime.of(2021, 3, 3, 12, 16),
+                "first schedule log entry 3");
 
         // forth - test-schedule-2 - first from schedule 2
         schedulerRep.addScheduleRun("test-schedule-2", "instance-id-forth-run",
                 LocalDateTime.of(2021, 3, 3, 12, 20).atZone(ZoneId.systemDefault()).toInstant(),
                 "first run schedule 2");
-        schedulerRep.addLogEntry("instance-id-forth-run", new LogEntry("second schedule log entry 1",
-                LocalDateTime.of(2021, 3, 3, 12, 20)));
+        schedulerRep.addLogEntry("instance-id-forth-run", LocalDateTime.of(2021, 3, 3, 12, 20),
+                "second schedule log entry 1");
 
         // fifth - test-schedule-1
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 25));
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-fifth-run",
                 LocalDateTime.of(2021, 3, 3, 12, 25).atZone(ZoneId.systemDefault()).toInstant(),
                 "forth run schedule 1");
-        schedulerRep.addLogEntry("instance-id-fifth-run", new LogEntry("first schedule log entry 4",
-                LocalDateTime.of(2021, 3, 3, 12, 25)));
+        schedulerRep.addLogEntry("instance-id-fifth-run", LocalDateTime.of(2021, 3, 3, 12, 25),
+                "first schedule log entry 4");
 
         // sixth - test-schedule-1 - should should be last run done and the one we want to retrieve
         LocalDateTime lastRunTimeSchedule1 = LocalDateTime.of(2021, 3, 3, 12, 30);
         schedulerRep.addScheduleRun("test-schedule-1", "instance-id-sixth-run",
                 lastRunTimeSchedule1.atZone(ZoneId.systemDefault()).toInstant(),
                 "fifth run schedule 1");
-        schedulerRep.addLogEntry("instance-id-sixth-run", new LogEntry("first schedule log entry 5",
-                LocalDateTime.of(2021, 3, 3, 12, 31)));
+        schedulerRep.addLogEntry("instance-id-sixth-run", LocalDateTime.of(2021, 3, 3, 12, 31),
+                "first schedule log entry 5");
 
         // seventh - schedule-2 - this is the last run for the schedule 2 that we want to retrieve
         LocalDateTime lastRunTimeSchedule2 = LocalDateTime.of(2021, 3, 3, 12, 32);
         schedulerRep.addScheduleRun("test-schedule-2", "instance-id-seventh-run",
                 lastRunTimeSchedule2.atZone(ZoneId.systemDefault()).toInstant(),
                 "second run schedule 2");
-        schedulerRep.addLogEntry("instance-id-seventh-run", new LogEntry("second schedule log entry 2",
-                LocalDateTime.of(2021, 3, 3, 12, 33)));
+        schedulerRep.addLogEntry("instance-id-seventh-run", LocalDateTime.of(2021, 3, 3, 12, 33),
+                "second schedule log entry 2");
 
         // :: Act
         List<ScheduledRunDto> scheduleRunFromDb = schedulerRep.getLastScheduleRuns();

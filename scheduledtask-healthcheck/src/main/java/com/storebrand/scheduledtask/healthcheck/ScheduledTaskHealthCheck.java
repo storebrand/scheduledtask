@@ -20,14 +20,13 @@ import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.HealthCheckMetadata;
 import com.storebrand.healthcheck.HealthCheckRegistry;
 import com.storebrand.healthcheck.Responsible;
-import com.storebrand.scheduledtask.ScheduledTaskConfig.Criticality;
-import com.storebrand.scheduledtask.ScheduledTaskConfig.Recovery;
+import com.storebrand.scheduledtask.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskService.Criticality;
 import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
+import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -77,7 +76,7 @@ public class ScheduledTaskHealthCheck {
         spec.dynamicText(context -> "Running node has the master lock: " + (_scheduledTaskService.hasMasterLock() ? "yes" : "no"));
         // :: Get the status from the db on who has the lock
         spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_PARTIAL, context -> {
-            Optional<MasterLockDto> masterLock = _scheduledTaskService.getMasterLock();
+            Optional<MasterLock> masterLock = _scheduledTaskService.getMasterLock();
             // ?: Is the lock yet unclaimed?
             if (!masterLock.isPresent()) {
                 // -> Yes, nobody has the lock. This means this node is just starting and have not managed
@@ -107,8 +106,8 @@ public class ScheduledTaskHealthCheck {
      */
     public void scheduledTaskHealthCheck(CheckSpecification spec) {
         spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
-            Map<String, ScheduleDto> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository().stream()
-                    .collect(toMap(ScheduledTaskService.ScheduleDto::getScheduleName, scheduleDto -> scheduleDto));
+            Map<String, Schedule> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository().stream()
+                    .collect(toMap(Schedule::getScheduleName, schedule -> schedule));
             TableBuilder tableBuilder = new TableBuilder(
                     "Schedule",
                     "Active",
@@ -154,8 +153,8 @@ public class ScheduledTaskHealthCheck {
         // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
         // set the defined getHealthCheckLevel() for this schedule.
         for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
-            Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getConfig().getCriticality()));
-            if (entry.getValue().getConfig().getRecovery() == Recovery.MANUAL_INTERVENTION) {
+            Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getCriticality()));
+            if (entry.getValue().getRecovery() == ScheduledTaskService.Recovery.MANUAL_INTERVENTION) {
                 axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);
             }
             spec.check(Responsible.DEVELOPERS, axes.toArray(new Axis[]{}), context -> {
@@ -170,10 +169,10 @@ public class ScheduledTaskHealthCheck {
                 }
 
                 Long runTime = entry.getValue().runTimeInMinutes().orElse(0L);
-                int wayOverdueTime = 10 * entry.getValue().getMaxExpectedMinutesToRun();
+                long wayOverdueTime = 10L * entry.getValue().getMaxExpectedMinutesToRun();
                 // :? Is this schedule way overdue?
-                if (runTime > 10 * wayOverdueTime) {
-                    // -> Yes this run has taken 10 times the estimated amount so we should display the HealthCheckLevel
+                if (runTime > wayOverdueTime) {
+                    // -> Yes this run has taken 10 times the estimated amount, so we should display a warning.
                     runFailed = true;
                     context.text(entry.getKey() + " is taking more than 10x the estimated runtime!");
                 }

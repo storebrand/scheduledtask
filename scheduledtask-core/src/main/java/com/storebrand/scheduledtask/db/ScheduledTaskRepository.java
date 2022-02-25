@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Optional;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
+import com.storebrand.scheduledtask.RetentionPolicy;
+import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 
@@ -78,12 +79,12 @@ public interface ScheduledTaskRepository {
     /**
      * Get all schedules in the database
      */
-    List<ScheduleDto> getSchedules();
+    List<Schedule> getSchedules();
 
     /**
      * Get the schedule with a specific name.
      */
-    Optional<ScheduleDto> getSchedule(String scheduleName);
+    Optional<Schedule> getSchedule(String scheduleName);
 
     /**
      * Add a schedule run result to the db.
@@ -160,15 +161,30 @@ public interface ScheduledTaskRepository {
     List<ScheduledRunDto> getScheduleRunsBetween(String scheduleName, LocalDateTime from, LocalDateTime to);
 
     /**
-     * Add a {@link LogEntry} to a specified ScheduleRun by using the scheduleRun's instanceId.
-     *
+     * Add a log entry to a specified scheduled task run, by using the scheduled runs instanceId.
      * @param instanceId
-     *         - InstanceId for the schedule run to add the logs to
-     * @param logEntry
-     *         - A {@link LogEntry} to insert.
-     * @return int - amount of inserts.
+     *         - InstanceId for the schedule run to add the logs to.
+     * @param logTime
+     *         - log time.
+     * @param message
+     *         - log message.
      */
-    int addLogEntry(String instanceId, LogEntry logEntry);
+    default void addLogEntry(String instanceId, LocalDateTime logTime, String message) {
+        addLogEntry(instanceId, logTime, message, null);
+    }
+
+    /**
+     * Add a log entry to a specified scheduled task run, by using the scheduled runs instanceId.
+     * @param instanceId
+     *         - InstanceId for the schedule run to add the logs to.
+     * @param logTime
+     *         - log time.
+     * @param message
+     *         - log message.
+     * @param stackTrace
+     *         - optional stack trace for error messages.
+     */
+    void addLogEntry(String instanceId, LocalDateTime logTime, String message, String stackTrace);
 
     /**
      * Get all logEntries for a given schedule run instance.
@@ -178,6 +194,8 @@ public interface ScheduledTaskRepository {
      * @return List<LogEntryDbo> - The logEntries (if any) for that schedule run instance
      */
     List<LogEntry> getLogEntries(String instanceId);
+
+    void executeRetentionPolicy(String scheduleName, RetentionPolicy retentionPolicy);
 
     // ===== DTOs ======================================================================================================
 

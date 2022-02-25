@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
+import com.storebrand.scheduledtask.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 
 /**
@@ -18,7 +18,7 @@ import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
  * <p>
  * After a lock has been acquired for a node it has to do the {@link #keepLock(String, String)} within the next 5 min
  * in order to be allowed to keep it. If it does not update withing that timespan it has to wait until the
- * {@link MasterLockDto#getLockLastUpdatedTime()} is over 10 min old before any node can acquire it again. This means
+ * {@link MasterLock#getLockLastUpdatedTime()} is over 10 min old before any node can acquire it again. This means
  * there is a 5 min gap where no node can aquire the lock at all.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
@@ -79,13 +79,13 @@ public interface MasterLockRepository {
      *
      * @return
      */
-    List<MasterLockDto> getLocks() throws SQLException;
+    List<MasterLock> getLocks() throws SQLException;
 
     /**
      * Helper method to get a specific the lock in the masterLock table.
      *
      * @return
      */
-    Optional<MasterLockDto> getLock(String lockName);
+    Optional<MasterLock> getLock(String lockName);
 
 }

@@ -21,9 +21,10 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleDto;
+import com.storebrand.scheduledtask.RetentionPolicy;
+import com.storebrand.scheduledtask.ScheduledTaskService;
+import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
@@ -157,7 +158,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public List<ScheduleDto> getSchedules() {
+    public List<Schedule> getSchedules() {
         String sql = "SELECT * FROM " + SCHEDULE_TASK_TABLE;
 
         try (Connection sqlConnection = _dataSource.getConnection();
@@ -186,7 +187,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public Optional<ScheduleDto> getSchedule(String scheduleName) {
+    public Optional<Schedule> getSchedule(String scheduleName) {
         String sql = "SELECT * FROM " + SCHEDULE_TASK_TABLE
                 + " WHERE schedule_name = ? ";
 
@@ -294,7 +295,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             pStmt.setString(1, instanceId);
 
             // First get the logEntries for this instance:
-            List<LogEntryDbo> logEntries = getLogEntriesDbo(instanceId);
+            List<LogEntry> logEntries = getLogEntries(instanceId);
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
                 if (result.first()) {
@@ -436,7 +437,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 + " WHERE run_start >= ? "
                 + " AND run_start <= ? "
                 + " AND schedule_name = ? "
-                + " ORDER BY run_start ASC";
+                + " ORDER BY run_start DESC";
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
@@ -470,26 +471,24 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         }
     }
 
-
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public int addLogEntry(String instanceId, LogEntry logEntry) {
+    public void addLogEntry(String instanceId, LocalDateTime logTime, String message, String stackTrace) {
         String sql = "INSERT INTO " + SCHEDULE_LOG_ENTRY_TABLE
                 + " (instance_id, log_msg, log_stacktrace, log_time) "
                 + " VALUES (?, ?, ?, ?)";
 
         log.debug("Adding logEntry for instanceId [" + instanceId + "], "
-                + "logMsg [" + logEntry.getMessage() + "], throwable set [" + logEntry.getStackTrace().isPresent()
-                + "]");
+                + "logMsg [" + message + "], stack trace set [" + (stackTrace != null) + "]");
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
 
             pStmt.setString(1, instanceId);
-            pStmt.setString(2, logEntry.getMessage());
-            pStmt.setString(3, logEntry.getStackTrace().orElse(null));
-            pStmt.setTimestamp(4, Timestamp.valueOf(logEntry.getLogTime()));
-            return pStmt.executeUpdate();
+            pStmt.setString(2, message);
+            pStmt.setString(3, stackTrace);
+            pStmt.setTimestamp(4, Timestamp.valueOf(logTime));
+            pStmt.executeUpdate();
         }
         catch (SQLException e) {
             throw new RuntimeException(e);
@@ -497,14 +496,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     }
 
     @Override
-    public List<LogEntry> getLogEntries(String instanceId) {
-        return getLogEntriesDbo(instanceId).stream()
-                .map(ScheduledTaskSqlRepository::fromDbo)
-                .collect(toList());
-    }
-
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    private List<LogEntryDbo> getLogEntriesDbo(String instanceId) {
+    public List<LogEntry> getLogEntries(String instanceId) {
         String sql = "SELECT * FROM " + SCHEDULE_LOG_ENTRY_TABLE
                 + " WHERE instance_id = ? "
                 + " ORDER BY log_time ASC ";
@@ -512,7 +505,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             pStmt.setString(1, instanceId);
 
-            List<LogEntryDbo> logEntries = new ArrayList<>();
+            List<LogEntry> logEntries = new ArrayList<>();
             try (ResultSet result = pStmt.executeQuery()) {
                 while (result.next()) {
                     // -> Yes we found the first row
@@ -524,11 +517,106 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                     logEntries.add(logEntry);
                 }
 
-                return logEntries;
+                return Collections.unmodifiableList(logEntries);
             }
         }
         catch (SQLException throwables) {
             throw new RuntimeException(throwables);
+        }
+    }
+
+    // ===== Retention policy =================================================================
+
+    @Override
+    public void executeRetentionPolicy(String scheduleName, RetentionPolicy retentionPolicy) {
+        if (!retentionPolicy.isRetentionPolicyEnabled()) {
+            return;
+        }
+
+        try (Connection sqlConnection = _dataSource.getConnection()) {
+            int deletedRecords = 0;
+
+            // ?: Is delete runs after days defined?
+            if (retentionPolicy.getDeleteRunsAfterDays() > 0) {
+                // -> Yes, then we delete all records older than max days.
+
+                LocalDateTime deleteOlder = LocalDateTime.now(_clock)
+                        .minusDays(retentionPolicy.getDeleteRunsAfterDays());
+
+                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, null);
+            }
+
+            // ?: Is delete successful runs after days defined?
+            if (retentionPolicy.getDeleteSuccessfulRunsAfterDays() > 0) {
+                // -> Yes, then we delete all records older than max days.
+
+                LocalDateTime deleteOlder = LocalDateTime.now(_clock)
+                        .minusDays(retentionPolicy.getDeleteSuccessfulRunsAfterDays());
+
+                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, null);
+            }
+
+            // ?: Is delete failed runs after days defined?
+            if (retentionPolicy.getDeleteFailedRunsAfterDays() > 0) {
+                // -> Yes, then we delete all records older than max days.
+
+                LocalDateTime deleteOlder = LocalDateTime.now(_clock)
+                        .minusDays(retentionPolicy.getDeleteFailedRunsAfterDays());
+
+                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, null);
+            }
+
+            // TODO: Keep only n records
+
+            if (deletedRecords > 0) {
+                log.info("Scheduled task " + scheduleName + ": Deleted " + deletedRecords + " old records.");
+            }
+        }
+        catch (SQLException throwables) {
+            throw new RuntimeException(throwables);
+        }
+
+    }
+
+    private int executeDelete(Connection sqlConnection,
+            String scheduleName, LocalDateTime deleteOlder, String status) throws SQLException {
+
+        String where = " WHERE scheduleName = ?"
+                + " AND run_start <= ?";
+        if (status != null) {
+            where += " AND status = ? ";
+        }
+
+        String deleteLogs = "DELETE * FROM " + SCHEDULE_LOG_ENTRY_TABLE + " l "
+                + " INNER JOIN " + SCHEDULE_RUN_TABLE + " sr "
+                + " ON sr.instance_id = l.instance_id "
+                + where
+                + " ORDER BY schedulerName, run_start DESC, status";
+
+
+
+        String deleteRuns = "DELETE * FROM " + SCHEDULE_RUN_TABLE
+                + where
+                + " ORDER BY schedulerName, run_start DESC, status";
+
+        try (PreparedStatement pStmt = sqlConnection.prepareStatement(deleteLogs)) {
+            pStmt.setString(1, scheduleName);
+            pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder));
+            if (status != null) {
+                pStmt.setString(3, status);
+            }
+
+            pStmt.executeUpdate();
+        }
+
+        try (PreparedStatement pStmt = sqlConnection.prepareStatement(deleteRuns)) {
+            pStmt.setString(1, scheduleName);
+            pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder));
+            if (status != null) {
+                pStmt.setString(3, status);
+            }
+
+            return pStmt.executeUpdate();
         }
     }
 
@@ -637,7 +725,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
     }
 
-    private static ScheduleDto fromDbo(ScheduleDbo dbo) {
+    private static Schedule fromDbo(ScheduleDbo dbo) {
         return new ScheduleDto(dbo.getScheduleName(), dbo.isActive(), dbo.isRunOnce(), dbo.getCronExpression(),
                 dbo.getNextRun(), dbo.getLastUpdated());
     }
@@ -645,10 +733,6 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     static ScheduledRunDto fromDbo(ScheduledRunDbo dbo) {
         return new ScheduledRunDto(dbo.getScheduleName(), dbo.getInstanceId(), dbo.getStatus(), dbo.getStatusMsg(),
                 dbo.getStatusThrowable(), dbo.getRunStart(), dbo.getStatusTime());
-    }
-
-    private static LogEntry fromDbo(LogEntryDbo dbo) {
-        return new LogEntry(dbo.getLogMessage(), dbo.getLogThrowable(), dbo.getLogTime());
     }
 
     // ===== DBO ==============================================================================
@@ -719,10 +803,10 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         private final String statusThrowable;
         private final Timestamp runStart;
         private final Timestamp statusTime;
-        private final List<LogEntryDbo> logEntries;
+        private final List<LogEntry> logEntries;
 
         ScheduledRunDbo(String scheduleName, String instanceId, String status, String statusMsg,
-                String statusThrowable, Timestamp runStart, Timestamp statusTime, List<LogEntryDbo> logEntries) {
+                String statusThrowable, Timestamp runStart, Timestamp statusTime, List<LogEntry> logEntries) {
             this.scheduleName = scheduleName;
             this.instanceId = instanceId;
             this.status = status;
@@ -761,7 +845,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             return statusTime.toInstant();
         }
 
-        public List<LogEntryDbo> getLogEntries() {
+        public List<LogEntry> getLogEntries() {
             return logEntries;
         }
     }
@@ -769,33 +853,91 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     /**
      * A log line for a given Schedule run.
      */
-    static class LogEntryDbo {
-        private final String instanceId;
-        private final String logMessage;
-        private final String logThrowable;
-        private final Timestamp logTime;
+    static class LogEntryDbo implements LogEntry {
+        private final String _instanceId;
+        private final String _message;
+        private final String _stackTrace;
+        private final LocalDateTime _logTime;
 
-        LogEntryDbo(String instanceId, String logMessage, String logThrowable, Timestamp logTime) {
-            this.instanceId = instanceId;
-            this.logMessage = logMessage;
-            this.logThrowable = logThrowable;
-            this.logTime = logTime;
+        LogEntryDbo(String instanceId, String message, String stackTrace, Timestamp logTime) {
+            this._instanceId = instanceId;
+            this._message = message;
+            this._stackTrace = stackTrace;
+            this._logTime = logTime.toLocalDateTime();
         }
 
+        @Override
         public String getInstanceId() {
-            return instanceId;
+            return _instanceId;
         }
 
-        public String getLogMessage() {
-            return logMessage;
+        @Override
+        public String getMessage() {
+            return _message;
         }
 
-        public String getLogThrowable() {
-            return logThrowable;
+        @Override
+        public Optional<String> getStackTrace() {
+            return Optional.ofNullable(_stackTrace);
         }
 
+        @Override
         public LocalDateTime getLogTime() {
-            return logTime.toLocalDateTime();
+            return _logTime;
+        }
+    }
+
+    // ===== DTOs ======================================================================================================
+
+    /**
+     * The schedule settings retrieved from the database.
+     */
+    static class ScheduleDto implements Schedule {
+        private final String scheduleName;
+        private final boolean active;
+        private final boolean runOnce;
+        private final String overriddenCronExpression;
+        private final Instant nextRun;
+        private final Instant lastUpdated;
+
+        ScheduleDto(String scheduleName, boolean active, boolean runOnce, String cronExpression,
+                Instant nextRun, Instant lastUpdated) {
+            this.scheduleName = scheduleName;
+            this.active = active;
+            this.runOnce = runOnce;
+            this.overriddenCronExpression = cronExpression;
+            this.nextRun = nextRun;
+            this.lastUpdated = lastUpdated;
+        }
+
+        @Override
+        public String getScheduleName() {
+            return scheduleName;
+        }
+
+        @Override
+        public boolean isActive() {
+            return active;
+        }
+
+        @Override
+        public boolean isRunOnce() {
+            return runOnce;
+        }
+
+        @Override
+        public Optional<String> getOverriddenCronExpression() {
+            return Optional.ofNullable(overriddenCronExpression);
+        }
+
+        @Override
+        public Instant getNextRun() {
+            return nextRun;
+        }
+
+        @Override
+        public Instant getLastUpdated() {
+            return lastUpdated;
         }
     }
 }
