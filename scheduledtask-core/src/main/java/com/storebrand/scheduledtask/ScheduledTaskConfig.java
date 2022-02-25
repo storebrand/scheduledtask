@@ -1,14 +1,9 @@
 package com.storebrand.scheduledtask;
 
+import com.storebrand.scheduledtask.ScheduledTaskService.Recovery;
+
 /**
  * Configuration for a scheduled task.
- * <p>
- * A scheduled task has a name, a default cron expression and a maximum expected minutes to run. In addition we define
- * the criticality of this scheduled task, and if it is self-healing or if we need manual intervention if something
- * goes wrong.
- * <p>
- * We can also define a custom {@link RetentionPolicy} for the scheduled task, that determines how long we will keep
- * record of the runs.
  *
  * @author Kristian Hiim
  */
@@ -17,18 +12,18 @@ public class ScheduledTaskConfig {
     private final String _name;
     private final String _cronExpression;
     private final int _maxExpectedMinutesToRun;
-    private final Criticality _criticality;
+    private final ScheduledTaskService.Criticality _criticality;
     private final Recovery _recovery;
     private final RetentionPolicy _retentionPolicy;
 
     public ScheduledTaskConfig(String name, String cronExpression, int maxExpectedMinutesToRun,
-            Criticality criticality, Recovery recovery) {
+            ScheduledTaskService.Criticality criticality, Recovery recovery) {
         this(name, cronExpression, maxExpectedMinutesToRun, criticality, recovery,
-                RetentionPolicy.DEFAULT_RETENTION_POLICY);
+                RetentionPolicyImpl.DEFAULT_RETENTION_POLICY);
     }
 
     public ScheduledTaskConfig(String name, String cronExpression, int maxExpectedMinutesToRun,
-            Criticality criticality, Recovery recovery, RetentionPolicy retentionPolicy) {
+            ScheduledTaskService.Criticality criticality, Recovery recovery, RetentionPolicy retentionPolicy) {
         _name = name;
         _cronExpression = cronExpression;
         _maxExpectedMinutesToRun = maxExpectedMinutesToRun;
@@ -49,7 +44,7 @@ public class ScheduledTaskConfig {
         return _maxExpectedMinutesToRun;
     }
 
-    public Criticality getCriticality() {
+    public ScheduledTaskService.Criticality getCriticality() {
         return _criticality;
     }
 
@@ -59,18 +54,6 @@ public class ScheduledTaskConfig {
 
     public RetentionPolicy getRetentionPolicy() {
         return _retentionPolicy;
-    }
-
-    public enum Criticality {
-        MISSION_CRITICAL,
-        VITAL,
-        IMPORTANT,
-        MINOR
-    }
-
-    public enum Recovery {
-        SELF_HEALING,
-        MANUAL_INTERVENTION
     }
 
     /**
@@ -86,32 +69,68 @@ public class ScheduledTaskConfig {
      * instead of a maximum amount of days. "Keep last total" will override any other setting, and will not allow more
      * than this amount of runs to be kept.
      */
-    public static class RetentionPolicy {
+    public static class RetentionPolicyImpl implements RetentionPolicy {
 
         public static final RetentionPolicy DEFAULT_RETENTION_POLICY = new Builder().build();
 
-        private final int _keepLastSuccessful;
-        private final int _keepLastFailed;
+        private final int _keepMaxFailedRuns;
+        private final int _keepMaxSuccessfulRuns;
 
-        private final int _keepLastTotal;
+        private final int _keepMaxRuns;
 
-        private final int _keepMaxDaysSuccessful;
-        private final int _keepMaxDaysFailed;
+        private final int _deleteFailedRunsAfterDays;
+        private final int _deleteSuccessfulRunsAfterDays;
 
-        private final int _keepMaxDays;
+        private final int _deleteRunsAfterDays;
 
-        private RetentionPolicy(int keepLastSuccessful, int keepLastFailed, int keepLastTotal, int keepMaxDaysSuccessful,
-                int keepMaxDaysFailed, int keepMaxDays) {
-            _keepLastSuccessful = keepLastSuccessful;
-            _keepLastFailed = keepLastFailed;
-            _keepLastTotal = keepLastTotal;
-            _keepMaxDaysSuccessful = keepMaxDaysSuccessful;
-            _keepMaxDaysFailed = keepMaxDaysFailed;
-            _keepMaxDays = keepMaxDays;
+        private RetentionPolicyImpl(int keepMaxFailedRuns, int keepMaxSuccessfulRuns, int keepMaxRuns, int deleteFailedRunsAfterDays,
+                int deleteSuccessfulRunsAfterDays, int deleteRunsAfterDays) {
+            _keepMaxFailedRuns = keepMaxFailedRuns;
+            _keepMaxSuccessfulRuns = keepMaxSuccessfulRuns;
+            _keepMaxRuns = keepMaxRuns;
+            _deleteFailedRunsAfterDays = deleteFailedRunsAfterDays;
+            _deleteSuccessfulRunsAfterDays = deleteSuccessfulRunsAfterDays;
+            _deleteRunsAfterDays = deleteRunsAfterDays;
         }
 
         public static RetentionPolicy keepMaxDays(int keepMaxDays) {
             return new Builder().keepMaxDays(keepMaxDays).build();
+        }
+
+        @Override
+        public int getKeepMaxFailedRuns() {
+            return _keepMaxFailedRuns;
+        }
+
+        @Override
+        public int getKeepMaxSuccessfulRuns() {
+            return _keepMaxSuccessfulRuns;
+        }
+
+        @Override
+        public int getKeepMaxRuns() {
+            return _keepMaxRuns;
+        }
+
+        @Override
+        public int getDeleteFailedRunsAfterDays() {
+            return _deleteFailedRunsAfterDays;
+        }
+
+        @Override
+        public int getDeleteSuccessfulRunsAfterDays() {
+            return _deleteSuccessfulRunsAfterDays;
+        }
+
+        @Override
+        public int getDeleteRunsAfterDays() {
+            return _deleteRunsAfterDays;
+        }
+
+        @Override
+        public boolean isRetentionPolicyEnabled() {
+            return _deleteRunsAfterDays > 0 || _deleteFailedRunsAfterDays > 0 || _deleteSuccessfulRunsAfterDays > 0
+                    || _keepMaxRuns > 0 || _keepMaxFailedRuns > 0 || _keepMaxSuccessfulRuns > 0;
         }
 
         public static class Builder {
@@ -156,7 +175,7 @@ public class ScheduledTaskConfig {
             }
 
             public RetentionPolicy build() {
-                return new RetentionPolicy(_keepLastSuccessful, _keepLastFailed, _keepLastTotal,
+                return new RetentionPolicyImpl(_keepLastSuccessful, _keepLastFailed, _keepLastTotal,
                         _keepMaxDaysSuccessful, _keepMaxDaysFailed, _keepMaxDays);
             }
         }

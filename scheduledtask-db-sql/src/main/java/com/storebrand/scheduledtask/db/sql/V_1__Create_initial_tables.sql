@@ -20,7 +20,7 @@ CREATE TABLE stb_schedule_master_locker (
 --------------------------------------------------
 -- stb_schedule_table_version
 --------------------------------------------------
--- This table holds a counter on what version this file 'Create_initial_tables' are. It is used during starup of the
+-- This table holds a counter on what version this file 'Create_initial_tables' are. It is used during startup of the
 -- scheduler to verify we have the same version in the service as goodies expects.
 CREATE TABLE stb_schedule_table_version (
     version int NOT NULL
@@ -32,7 +32,7 @@ INSERT INTO stb_schedule_table_version (version) VALUES (1);
 --------------------------------------------------
 -- stb_schedule
 --------------------------------------------------
--- Table for keeping track of the ScheduledTask's
+-- Table for keeping track of the ScheduledTasks
 -- Column schedule_name: the name of the schedule
 -- Column is_active: flag that informs if this schedule is active (IE is running or paused)
 -- Column run_once: flag that informs that this schedule should run immediately regardless of next_run
@@ -59,7 +59,7 @@ CREATE TABLE stb_schedule (
 -- Column schedule_name: the name of the schedule
 -- Column instance_id: Instance for the run. = runTime + "-" + nodeName
 -- Column run_start: When this schedule was started.
--- Column status state of the schedule run, should be one of ScheduleTaskImpl.State STARTªED/FAILED/DISPATCHED/DONE
+-- Column status state of the schedule run, should be one of ScheduleTaskImpl.State STARTED/FAILED/DISPATCHED/DONE
 -- Column status_msg: Some informing text that is connected to the state.
 -- Column status_stacktrace: Can only be set on STATUS = FAILED and can contain a stacktrace
 -- Column status_time: When this schedule state was set.
@@ -73,6 +73,8 @@ CREATE TABLE stb_schedule_run (
     status_time DATETIME2 NOT NULL,
     CONSTRAINT PK_instance_id PRIMARY KEY (instance_id)
 );
+
+CREATE INDEX IX_stb_schedule_run_name_start_status ON stb_schedule_run (schedule_name, run_start DESC, status);
 
 --------------------------------------------------
 -- stb_schedule_log_entry

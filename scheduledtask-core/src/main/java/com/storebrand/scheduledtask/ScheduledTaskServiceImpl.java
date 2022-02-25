@@ -20,8 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskConfig.Criticality;
-import com.storebrand.scheduledtask.ScheduledTaskConfig.Recovery;
+import com.storebrand.scheduledtask.ScheduledTaskConfig.RetentionPolicyImpl;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
@@ -47,7 +46,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private static final String MASTER_LOCK_NAME = "scheduledTask";
     private static final long SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
     private static final long MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
-    private final MasterLock _masterLock;
+    private final MasterLockKeeper _masterLockKeeper;
     private final Clock _clock;
     private final MasterLockRepository _masterLockRepository;
     private final ScheduledTaskRepository _scheduledTaskRepository;
@@ -59,8 +58,8 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         _masterLockRepository = masterLockRepository;
         _scheduledTaskRepository = scheduledTaskRepository;
 
-        _masterLock = new MasterLock(_masterLockRepository, this, clock);
-        _masterLock.start();
+        _masterLockKeeper = new MasterLockKeeper(_masterLockRepository, this, clock);
+        _masterLockKeeper.start();
     }
 
 
@@ -73,7 +72,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         });
 
         log.info("Shutting down the masterLock thread");
-        _masterLock.stop();
+        _masterLockKeeper.stop();
     }
 
     /**
@@ -104,38 +103,23 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         // Create the schedule
         // TODO: Handle health checks
         ScheduledTaskImpl schedule = new ScheduledTaskImpl(schedulerName, cronExpression,
-                _masterLock, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
+                _masterLockKeeper, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
         _schedules.put(schedulerName, schedule);
         return schedule;
     }
 
     @Override
-    @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
-            + "always uses Temporal LocalDateTime and is always known.")
-    public ScheduledTask addSchedule(ScheduledTaskConfig config, ScheduleRunnable runnable) {
-        // In the first insert we can calculate the next run directly since there is no override from db yet
-        CronExpression cronExpressionParsed = CronExpression.parse(config.getCronExpression());
-        LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
-        Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
-
-        // Add the schedule to the database
-        _scheduledTaskRepository.createSchedule(config.getName(), nextRunInstant);
-
-        // Create the schedule
-        // TODO: Handle health checks
-        // TODO: Handle inserting same twice
-        ScheduledTaskImpl schedule = new ScheduledTaskImpl(config, runnable,
-                _masterLock, _scheduledTaskRepository, _clock);
-        _schedules.put(config.getName(), schedule);
-        return schedule;
+    public ScheduledTaskInitializer addScheduledTask(String name, String cronExpression,
+            ScheduleRunnable runnable) {
+        return new ScheduledTaskRunnerInitializer(name, cronExpression, runnable);
     }
 
     @Override
-    public ScheduledTask getSchedule(String schedulerName) {
-        if (schedulerName == null) {
+    public ScheduledTask getSchedule(String name) {
+        if (name == null) {
             return null;
         }
-        return _schedules.getOrDefault(schedulerName, null);
+        return _schedules.getOrDefault(name, null);
     }
 
     @Override
@@ -144,18 +128,18 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     }
 
     @Override
-    public List<ScheduleDto> getSchedulesFromRepository() {
+    public List<Schedule> getSchedulesFromRepository() {
         return _scheduledTaskRepository.getSchedules();
     }
 
     @Override
-    public Optional<MasterLockDto> getMasterLock() {
-        return _masterLock.getMasterLock();
+    public Optional<MasterLock> getMasterLock() {
+        return _masterLockKeeper.getMasterLock();
     }
 
     @Override
     public boolean hasMasterLock() {
-        return _masterLock.isMaster();
+        return _masterLockKeeper.isMaster();
     }
 
     /**
@@ -196,7 +180,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     /**
      * Responsible of awaking all schedules.
-     * Used by the {@link MasterLock} to awaken all nodes when it manages to aquire the master lock.
+     * Used by the {@link MasterLockKeeper} to awaken all nodes when it manages to aquire the master lock.
      */
     void wakeAllSchedules() {
         _schedules.entrySet().stream().forEach(entry -> {
@@ -217,7 +201,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
      * for the duration 5 - 10 min.
      * After the lock has not been updated for 10 minutes it can be re-acquired again.
      */
-    static class MasterLock {
+    static class MasterLockKeeper {
         private Thread _runner;
         private final Clock _clock;
         /* .. state vars .. */
@@ -228,14 +212,14 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         private final MasterLockRepository _masterLockRepository;
         private final ScheduledTaskServiceImpl _storebrandScheduleService;
 
-        MasterLock(MasterLockRepository masterLockRepository,
+        MasterLockKeeper(MasterLockRepository masterLockRepository,
                 ScheduledTaskServiceImpl storebrandScheduleService,
                 Clock clock) {
             _masterLockRepository = masterLockRepository;
             _storebrandScheduleService = storebrandScheduleService;
             _clock = clock;
             log.info("Starting MasterLock thread");
-            _runner = new Thread(() -> MasterLock.this.runner(), "MasterLock thread");
+            _runner = new Thread(() -> MasterLockKeeper.this.runner(), "MasterLock thread");
 
             // Make sure that the master lock is created:
             _masterLockRepository.tryCreateLock(MASTER_LOCK_NAME, Host.getLocalHostName());
@@ -318,7 +302,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             return _isMaster;
         }
 
-        Optional<MasterLockDto> getMasterLock() {
+        Optional<MasterLock> getMasterLock() {
             return _masterLockRepository.getLock(MASTER_LOCK_NAME);
         }
 
@@ -345,6 +329,117 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     // ===== Helper class ==========================================================================================
 
+    private class ScheduledTaskRunnerInitializer implements ScheduledTaskInitializer {
+
+        private final String _scheduleName;
+        private final String _cronExpression;
+        private final ScheduleRunnable _runnable;
+        private int _maxExpectedMinutesToRun = DEFAULT_MAX_EXPECTED_MINUTES_TO_RUN;
+        private Criticality _criticality = DEFAULT_CRITICALITY;
+        private Recovery _recovery = DEFAULT_RECOVERY;
+        private int _deleteRunsAfter = DEFAULT_DELETE_RUNS_AFTER_DAYS;
+        private int _deleteSuccessfulRunsAfter;
+        private int _deleteFailedRunsAfterDays;
+        private int _keepMaxRuns;
+        private int _keepMaxSuccessfulRuns;
+        private int _keepMaxFailedRuns;
+
+        private ScheduledTaskRunnerInitializer(String scheduleName, String cronExpression,
+                ScheduleRunnable runnable) {
+            _scheduleName = scheduleName;
+            _cronExpression = cronExpression;
+            _runnable = runnable;
+        }
+
+        @Override
+        public ScheduledTaskInitializer maxExpectedMinutesToRun(int minutes) {
+            _maxExpectedMinutesToRun = minutes;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer criticality(Criticality criticality) {
+            _criticality = criticality;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer recovery(Recovery recovery) {
+            _recovery = recovery;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer deleteRunsAfterDays(int days) {
+            _deleteRunsAfter = days;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer deleteSuccessfulRunsAfterDays(int days) {
+            _deleteSuccessfulRunsAfter = days;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer deleteFailedRunsAfterDays(int days) {
+            _deleteFailedRunsAfterDays = days;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer keepMaxRuns(int maxRuns) {
+            _keepMaxRuns = maxRuns;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer keepMaxSuccessfulRuns(int maxSuccessfulRuns) {
+            _keepMaxSuccessfulRuns = maxSuccessfulRuns;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskInitializer keepMaxFailedRuns(int maxFailedRuns) {
+            _keepMaxFailedRuns = maxFailedRuns;
+            return this;
+        }
+
+        @Override
+        @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
+                + "always uses Temporal LocalDateTime and is always known.")
+        public ScheduledTask start() {
+            // In the first insert we can calculate the next run directly since there is no override from db yet
+            CronExpression cronExpressionParsed = CronExpression.parse(_cronExpression);
+            LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
+            Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
+
+            // Ensure schedule exists in database. This will only add the schedule if it does not exist.
+            _scheduledTaskRepository.createSchedule(_scheduleName, nextRunInstant);
+
+            return _schedules.compute(_scheduleName, (key, value) -> {
+                // ?: Do we already have a schedule with this name?
+                if (value != null) {
+                    // -> Yes, then we should throw so we don't create an additional runner for this schedule.
+                    throw new DuplicateScheduledTaskException(key);
+                }
+                RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+                        .keepMaxDays(_deleteRunsAfter)
+                        .keepMaxDaysSuccessful(_deleteSuccessfulRunsAfter)
+                        .keepMaxDaysFailed(_deleteFailedRunsAfterDays)
+                        .keepLastTotal(_keepMaxRuns)
+                        .keepLastSuccessful(_keepMaxSuccessfulRuns)
+                        .keepLastFailed(_keepMaxFailedRuns).build();
+
+                ScheduledTaskConfig config = new ScheduledTaskConfig(_scheduleName, _cronExpression,
+                        _maxExpectedMinutesToRun, _criticality, _recovery, retentionPolicy);
+
+                return new ScheduledTaskImpl(config, _runnable,
+                        _masterLockKeeper, _scheduledTaskRepository, _clock);
+            });
+        }
+    }
+
     /**
      * The schedule class that is responsible of handling when it should run, sleep, pause and shutting down.
      */
@@ -363,18 +458,18 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         private volatile boolean _isRunning = false;
         private volatile boolean _runOnce = false;
         private final Object _syncObject = new Object();
-        private final MasterLock _masterLock;
+        private final MasterLockKeeper _masterLockKeeper;
         private final ScheduledTaskRepository _scheduledTaskRepository;
         private final Clock _clock;
 
         ScheduledTaskImpl(String schedulerName, String cronExpression,
-                MasterLock masterLock, ScheduledTaskRepository scheduledTaskRepository,
+                MasterLockKeeper masterLockKeeper, ScheduledTaskRepository scheduledTaskRepository,
                 int maxExpectedMinutes, Clock clock, ScheduleRunnable runnable) {
             _config = new ScheduledTaskConfig(schedulerName, cronExpression, maxExpectedMinutes,
                     Criticality.IMPORTANT, Recovery.SELF_HEALING);
             _clock = clock;
             _defaultCronExpression = CronExpression.parse(cronExpression);
-            _masterLock = masterLock;
+            _masterLockKeeper = masterLockKeeper;
             _scheduledTaskRepository = scheduledTaskRepository;
             _runnable = runnable;
             log.info("Starting Thread '" + schedulerName + "' with the cronExpression '" + cronExpression + "'.");
@@ -384,11 +479,11 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         ScheduledTaskImpl(ScheduledTaskConfig config, ScheduleRunnable runnable,
-                MasterLock masterLock, ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
+                MasterLockKeeper masterLockKeeper, ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
             _config = config;
             _runnable = runnable;
             _defaultCronExpression = CronExpression.parse(config.getCronExpression());
-            _masterLock = masterLock;
+            _masterLockKeeper = masterLockKeeper;
             _scheduledTaskRepository = scheduledTaskRepository;
             _clock = clock;
             log.info("Starting Thread '" + config.getName()
@@ -405,7 +500,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                 try {
                     SLEEP_LOOP: while (_runFlag) {
                         // get the next run from the db:
-                        Optional<ScheduleDto> scheduleFromDb = _scheduledTaskRepository.getSchedule(getScheduleName());
+                        Optional<Schedule> scheduleFromDb = _scheduledTaskRepository.getSchedule(getScheduleName());
                         if (!scheduleFromDb.isPresent()) {
                             throw new RuntimeException("Schedule with name '" + getScheduleName() + " was not found'");
                         }
@@ -418,7 +513,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                                 .orElse(null);
 
                         // ?: Are we the master node
-                        if (_masterLock.isMaster()) {
+                        if (_masterLockKeeper.isMaster()) {
                             // -> Yes, we are master and should only sleep if we are still waiting for the nextRun.
                             if (Instant.now(_clock).isBefore(_nextRun)) {
                                 // -> No, we have not yet passed the next run so we should sleep a bit
@@ -465,7 +560,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                         }
 
                         // ?: Are we master
-                        if (!_masterLock.isMaster()) {
+                        if (!_masterLockKeeper.isMaster()) {
                             Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
 
                             log.info("Thread '" + ScheduledTaskImpl.this.getScheduleName()
@@ -703,8 +798,13 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         @Override
-        public ScheduledTaskConfig getConfig() {
-            return _config;
+        public Criticality getCriticality() {
+            return _config.getCriticality();
+        }
+
+        @Override
+        public Recovery getRecovery() {
+            return _config.getRecovery();
         }
 
         @Override
@@ -963,13 +1063,13 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         @Override
         public void log(String msg) {
-            _scheduledTaskRepository.addLogEntry(_instanceId, new LogEntry(msg, LocalDateTime.now(_clock)));
+            _scheduledTaskRepository.addLogEntry(_instanceId, LocalDateTime.now(_clock), msg);
         }
 
         @Override
         public void log(String msg, Throwable throwable) {
-            _scheduledTaskRepository.addLogEntry(_instanceId,
-                    new LogEntry(msg, throwableToString(throwable), LocalDateTime.now(_clock)));
+            _scheduledTaskRepository.addLogEntry(_instanceId, LocalDateTime.now(_clock), msg,
+                    throwableToStackTraceString(throwable));
         }
 
         @Override
@@ -990,7 +1090,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         @Override
         public ScheduleStatus failed(String msg, Throwable throwable) {
-            _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg, throwableToString(throwable));
+            _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg, throwableToStackTraceString(throwable));
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
             log("[" + State.FAILED + "] " + msg, throwable);
             return new ScheduleStatusImpl();
@@ -1017,7 +1117,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     /**
      * Converts a throwable to string.
      */
-    static String throwableToString(Throwable throwable) {
+    static String throwableToStackTraceString(Throwable throwable) {
         if (throwable == null) {
             return null;
         }

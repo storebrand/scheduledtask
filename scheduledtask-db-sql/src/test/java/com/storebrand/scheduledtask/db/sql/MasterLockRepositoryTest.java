@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLockDto;
+import com.storebrand.scheduledtask.MasterLock;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -76,7 +76,7 @@ public class MasterLockRepositoryTest {
 
         // :: Assert
         assertTrue(isInserted);
-        Optional<MasterLockDto> currentLock = master.getLock("new-lock-does-not-exists");
+        Optional<MasterLock> currentLock = master.getLock("new-lock-does-not-exists");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
     }
@@ -93,10 +93,10 @@ public class MasterLockRepositoryTest {
         // :: Assert
         assertTrue(isInserted1);
         assertTrue(isInserted2);
-        Optional<MasterLockDto> firstLock = master.getLock("new-lock-does-not-exists");
+        Optional<MasterLock> firstLock = master.getLock("new-lock-does-not-exists");
         assertTrue(firstLock.isPresent());
         assertEquals("test-node-1", firstLock.get().getNodeName());
-        Optional<MasterLockDto> secondLock = master.getLock("another-does-not-exists");
+        Optional<MasterLock> secondLock = master.getLock("another-does-not-exists");
         assertTrue(secondLock.isPresent());
         assertEquals("test-node-1", secondLock.get().getNodeName());
     }
@@ -126,7 +126,7 @@ public class MasterLockRepositoryTest {
 
         // :: Assert
         assertFalse(inserted);
-        Optional<MasterLockDto> currentLock = master.getLock("unaquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("unaquiredLock");
         assertFalse(currentLock.isPresent());
     }
 
@@ -144,7 +144,7 @@ public class MasterLockRepositoryTest {
         assertTrue(acquired1);
         // Node 2 should not be able to acquire the lock due to node 1 just took this one.
         assertFalse(acquired2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
     }
@@ -172,7 +172,7 @@ public class MasterLockRepositoryTest {
         assertFalse(inserted1);
         // Node 2 should not be able to acquire the lock due to node 1 just took this one.
         assertFalse(inserted2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
         assertEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -205,7 +205,7 @@ public class MasterLockRepositoryTest {
         assertFalse(inserted1);
         // Node 2 should not be able to acquire the lock due to node 1 just took this one.
         assertFalse(inserted2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
         assertEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -238,7 +238,7 @@ public class MasterLockRepositoryTest {
         // :: Assert
         assertFalse(inserted1);
         assertTrue(inserted2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-2", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -271,7 +271,7 @@ public class MasterLockRepositoryTest {
         // :: Assert
         assertTrue(keepLockUpdatesNode1);
         assertFalse(acquireLockNode2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -314,7 +314,7 @@ public class MasterLockRepositoryTest {
         assertTrue(keepLockUpdatesNode1_second);
         assertTrue(keepLockUpdatesNode1_third);
         assertFalse(acquireLockNode2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -362,7 +362,7 @@ public class MasterLockRepositoryTest {
         assertFalse(acquireLockNode2_first);
         assertFalse(acquireLockNode2_second);
         assertFalse(acquireLockNode2_third);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -405,7 +405,7 @@ public class MasterLockRepositoryTest {
         assertFalse(keepLockUpdatesNode1_second);
         assertFalse(acquireLockNode2_first);
         assertTrue(acquireLockNode2_second);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-2", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -438,7 +438,7 @@ public class MasterLockRepositoryTest {
         // :: Assert
         assertTrue(releaseLockNode1);
         assertTrue(acquireLockNode2);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-2", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
@@ -471,7 +471,7 @@ public class MasterLockRepositoryTest {
         // :: Assert
         assertTrue(keepLockNode1);
         assertFalse(releaseAnothersLock);
-        Optional<MasterLockDto> currentLock = master.getLock("acquiredLock");
+        Optional<MasterLock> currentLock = master.getLock("acquiredLock");
         assertTrue(currentLock.isPresent());
         assertEquals("test-node-1", currentLock.get().getNodeName());
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
