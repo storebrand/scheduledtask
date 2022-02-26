@@ -1,6 +1,8 @@
 package com.storebrand.scheduledtask;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.Recovery;
+import com.storebrand.scheduledtask.ScheduledTask.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
+import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 
 /**
  * Configuration for a scheduled task.
@@ -12,18 +14,18 @@ public class ScheduledTaskConfig {
     private final String _name;
     private final String _cronExpression;
     private final int _maxExpectedMinutesToRun;
-    private final ScheduledTaskService.Criticality _criticality;
+    private final Criticality _criticality;
     private final Recovery _recovery;
     private final RetentionPolicy _retentionPolicy;
 
     public ScheduledTaskConfig(String name, String cronExpression, int maxExpectedMinutesToRun,
-            ScheduledTaskService.Criticality criticality, Recovery recovery) {
+            Criticality criticality, Recovery recovery) {
         this(name, cronExpression, maxExpectedMinutesToRun, criticality, recovery,
                 RetentionPolicyImpl.DEFAULT_RETENTION_POLICY);
     }
 
     public ScheduledTaskConfig(String name, String cronExpression, int maxExpectedMinutesToRun,
-            ScheduledTaskService.Criticality criticality, Recovery recovery, RetentionPolicy retentionPolicy) {
+            Criticality criticality, Recovery recovery, RetentionPolicy retentionPolicy) {
         _name = name;
         _cronExpression = cronExpression;
         _maxExpectedMinutesToRun = maxExpectedMinutesToRun;
@@ -44,7 +46,7 @@ public class ScheduledTaskConfig {
         return _maxExpectedMinutesToRun;
     }
 
-    public ScheduledTaskService.Criticality getCriticality() {
+    public Criticality getCriticality() {
         return _criticality;
     }
 

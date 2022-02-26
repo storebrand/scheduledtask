@@ -1,9 +1,8 @@
 package com.storebrand.scheduledtask;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.Criticality;
-import com.storebrand.scheduledtask.ScheduledTaskService.Recovery;
+import com.storebrand.scheduledtask.ScheduledTask.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunnable;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
 
 /**
  * Initializer that is used to build a scheduled task. Get an implementation by calling

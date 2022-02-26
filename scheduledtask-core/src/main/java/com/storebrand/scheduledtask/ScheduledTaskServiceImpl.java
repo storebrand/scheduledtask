@@ -20,6 +20,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.storebrand.scheduledtask.ScheduledTask.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
+import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig.RetentionPolicyImpl;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
@@ -73,39 +76,6 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         log.info("Shutting down the masterLock thread");
         _masterLockKeeper.stop();
-    }
-
-    /**
-     * Create a new schedule that will run at the given {@link CronExpression}.
-     *
-     * @param schedulerName
-     *         - Name of the schedule
-     * @param cronExpression
-     *         - When this schedule should run.
-     * @param maxExpectedMinutes
-     *         - Amount of minutes this should run.
-     * @param runnable
-     *         - The runnable that this schedule should run.
-     */
-    @Override
-    @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
-            + "always uses Temporal LocalDateTime and is always known.")
-    public ScheduledTask addSchedule(String schedulerName, String cronExpression, int maxExpectedMinutes,
-            ScheduleRunnable runnable) {
-        // In the first insert we can calculate the next run directly since there is no override from db yet
-        CronExpression cronExpressionParsed = CronExpression.parse(cronExpression);
-        LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
-        Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
-
-        // Add the schedule to the database
-        _scheduledTaskRepository.createSchedule(schedulerName, nextRunInstant);
-
-        // Create the schedule
-        // TODO: Handle health checks
-        ScheduledTaskImpl schedule = new ScheduledTaskImpl(schedulerName, cronExpression,
-                _masterLockKeeper, _scheduledTaskRepository, maxExpectedMinutes, _clock, runnable);
-        _schedules.put(schedulerName, schedule);
-        return schedule;
     }
 
     @Override
@@ -805,6 +775,11 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         @Override
         public Recovery getRecovery() {
             return _config.getRecovery();
+        }
+
+        @Override
+        public RetentionPolicy getRetentionPolicy() {
+            return _config.getRetentionPolicy();
         }
 
         @Override

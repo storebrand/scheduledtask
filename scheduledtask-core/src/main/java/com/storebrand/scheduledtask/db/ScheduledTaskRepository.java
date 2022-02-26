@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.RetentionPolicy;
+import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
