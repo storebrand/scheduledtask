@@ -20,12 +20,13 @@ import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.HealthCheckMetadata;
 import com.storebrand.healthcheck.HealthCheckRegistry;
 import com.storebrand.healthcheck.Responsible;
-import com.storebrand.scheduledtask.MasterLock;
-import com.storebrand.scheduledtask.ScheduledTaskService.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTask.Criticality;
 import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
+import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -154,7 +155,7 @@ public class ScheduledTaskHealthCheck {
         // set the defined getHealthCheckLevel() for this schedule.
         for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
             Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getCriticality()));
-            if (entry.getValue().getRecovery() == ScheduledTaskService.Recovery.MANUAL_INTERVENTION) {
+            if (entry.getValue().getRecovery() == Recovery.MANUAL_INTERVENTION) {
                 axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);
             }
             spec.check(Responsible.DEVELOPERS, axes.toArray(new Axis[]{}), context -> {

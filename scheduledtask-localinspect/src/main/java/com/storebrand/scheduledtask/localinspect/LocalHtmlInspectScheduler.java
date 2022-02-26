@@ -18,10 +18,10 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTask;
+import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;

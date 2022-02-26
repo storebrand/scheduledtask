@@ -15,20 +15,6 @@ import java.util.Optional;
 public interface ScheduledTaskService {
 
     /**
-     * Create a new schedule that will run at the given cron expression.
-     *
-     * @param scheduleName
-     *         - Name of the schedule
-     * @param cronExpression
-     *         - When this schedule should run.
-     * @param maxExpectedMinutes
-     *         - Amount of minutes this should run.
-     * @param runnable
-     *         - The runnable that this schedule should run.
-     */
-    ScheduledTask addSchedule(String scheduleName, String cronExpression, int maxExpectedMinutes, ScheduleRunnable runnable);
-
-    /**
      * Create a new schedule. Configure additional parameters on the {@link ScheduledTaskInitializer} and finally call
      * {@link ScheduledTaskInitializer#start()} to actually initialize and start the new scheduled task.
      *
@@ -107,133 +93,6 @@ public interface ScheduledTaskService {
     void close();
 
     /**
-     * The running schedule.
-     */
-    interface ScheduledTask {
-        /**
-         * Retrieve the name of the running schedule
-         */
-        String getScheduleName();
-
-        /**
-         * Get the criticality level of the running schedule
-         */
-        Criticality getCriticality();
-
-        /**
-         * Get the recovery mode of the running schedule.
-         */
-        Recovery getRecovery();
-
-
-        /**
-         * Sets this schedule to active meaning it will start executing the supplied runnable
-         */
-        void start();
-
-        /**
-         * Sets this schedule to inactive meaning it will still to the cronExpression schedules but skip the execution
-         * of the supplied runnable.
-         */
-        void stop();
-
-        /**
-         * Sets a schedule to run immediately. Note it will first mark this schedule to run by setting a flag in the db,
-         * then wake up the scheduler thread so it will be triggered, assuming this is called on the node that has
-         * the master lock it will trigger nearly instantly. However if this where triggered by a node that does not
-         * have the master lock it will delay for a short amount of time depending on the implementation. The current
-         * default implementation will sleep for up to two minutes between checking for new tasks.
-         * <p>
-         * This will prepend a line to the logs informing this schedule run where manually started.
-         */
-        void runNow();
-
-        /**
-         * Check if this schedule is currently set to active ie {@link #start()} (default on startup).
-         * @return
-         *          - True: It is executing the supplied runnable.
-         *          - False: It is currently set to skip executing the supplied runnable. {@link #stop()}}
-         *          has been used.
-         */
-        boolean isActive();
-
-        /**
-         * Return the last run done by the schedule
-         */
-        Optional<ScheduleRunContext> getLastScheduleRun();
-
-        /**
-         * Retrieve all schedule runs between two dates. This filters by the start time of the schedule runs.
-         */
-        List<ScheduleRunContext> getAllScheduleRunsBetween(LocalDateTime from, LocalDateTime to);
-
-        /**
-         * Check if this current schedule is currently running. Can be used with {@link #isOverdue()} to check if this
-         * schedule is taking longer than expected.
-         */
-        boolean isRunning();
-
-        /**
-         * Checks if this run is taking longer time than it where expected to use during creation of the schedule.
-         */
-        boolean isOverdue();
-
-        /**
-         * Returns running time in minutes, if task is running.
-         */
-        Optional<Long> runTimeInMinutes();
-
-        /**
-         * Set a new cronExpression to be used by the schedule. If this is set to null it will fallback to use the
-         * schedule defined at {@link #getActiveCronExpression()}.
-         */
-        void setOverrideExpression(String newCronExpression);
-
-        /**
-         * Retrieve the cronExpression that where set when the schedule was created by
-         * {@link #addSchedule(String, String, int, ScheduleRunnable)}.
-         */
-        String getDefaultCronExpression();
-
-        /**
-         * Get the current used cronExpression by this schedule. If it is not overridden by
-         * {@link #setOverrideExpression(String)} then it will return the {@link #getDefaultCronExpression()}
-         * <p>
-         * If a new cronExpression has been set by using {@link #setOverrideExpression(String)} then that will
-         * be used.
-         */
-        String getActiveCronExpression();
-
-        /**
-         * Retrieve the in-memory timestamp on when the last run where started. May be null if it has not yet
-         * started a run.
-         */
-        Instant getLastRunStarted();
-
-        /**
-         * Retrieve the in-memory timestamp on when the last run where completed. Note this may be before the
-         * {@link #getLastRunStarted()}, if it is then it means the schedule is currently running and has
-         * not yet completed. May be null if it has not yet completed a run.
-         */
-        Instant getLastRunCompleted();
-
-        /**
-         * Retrieve the max amount of minutes this schedule is expected to run.
-         */
-        int getMaxExpectedMinutesToRun();
-
-        /**
-         * Retrieves the in memory instant on when this schedule is expected to run next.
-         */
-        Instant getNextRun();
-
-        /**
-         * Retrieve a specific {@link ScheduleRunContext}
-         */
-        ScheduleRunContext getInstance(String instanceId);
-    }
-
-    /**
      * Represents the current state of a task.
      */
     enum State {
@@ -241,58 +100,6 @@ public interface ScheduledTaskService {
         FAILED,
         DISPATCHED,
         DONE
-    }
-
-    /**
-     * Criticality defines four levels that signals how important a scheduled task is, and can be used in monitoring systems
-     * to determine how to show failed runs. What each criticality level represents is entirely up to the user, but an
-     * example definition of the levels is provided for each. Paired with {@link Recovery} it helps prioritize what failed
-     * tasks should be looked into.
-     */
-    enum Criticality {
-        /**
-         * These tasks are absolute critical to the function of a service. If it is not running as expected this will have a
-         * great impact on the operation. Recovery time should typically be measured in terms of hours, not days.
-         */
-        MISSION_CRITICAL,
-        /**
-         * These are tasks that fall between mission critical and important tasks. They are not as critical as the most
-         * critical tasks, but issues needs to be resolved as soon as possible after resolving any critical issues. Recovery
-         * time can typically be measured in hours, or at most a day or two.
-         */
-        VITAL,
-        /**
-         * If these tasks fail it won't stop the service from functioning, but it is still an important task. If it does not
-         * work the service should still be able to perform its primary function, but it might not be able to deliver all
-         * functionality. Recovery time can be measured in days, or perhaps weeks.
-         */
-        IMPORTANT,
-        /**
-         * These are minor tasks, that are not critical to the service. If they are not running as they should the service
-         * will have some minor issues that can easily be resolved.
-         */
-        MINOR
-    }
-
-    /**
-     * Recovery defines if a scheduled task is able to fix itself, or if failed tasks must be handled manually by human
-     * interaction.
-     */
-    enum Recovery {
-        /**
-         * Self-healing scheduled task will typically recover the next time they run, and it is probably not necessary
-         * to take action unless the service keeps failing multiple times. Setting this means that the task should be
-         * able to handle that the previous run(s) failed, and should pick up where it stopped on the last run.
-         * <p>
-         * Fixing a self-healing task that has failed should be as easy as triggering the task again, or simply waiting
-         * for it to run again.
-         */
-        SELF_HEALING,
-        /**
-         * Manual intervention is used if a failed scheduled task requires manual cleanup, or will not recover from a
-         * failed run by simply running the task again.
-         */
-        MANUAL_INTERVENTION
     }
 
     /**
@@ -470,5 +277,24 @@ public interface ScheduledTaskService {
          * The time this log message was written.
          */
         LocalDateTime getLogTime();
+    }
+
+    /**
+     * Information about the current master lock for scheduled tasks.
+     */
+    interface MasterLock {
+        String getLockName();
+
+        String getNodeName();
+
+        Instant getLockTakenTime();
+
+        Instant getLockLastUpdatedTime();
+
+        /**
+         * Check if this lock is still valid. If it is over 5 min old it is invalid meaning this host where the one to have
+         * it last. The lock can't be re-claimed before it has passed 10 min since last update.
+         */
+        boolean isValid(Instant now);
     }
 }

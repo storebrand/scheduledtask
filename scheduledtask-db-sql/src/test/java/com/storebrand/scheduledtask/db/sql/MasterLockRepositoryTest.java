@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
-import com.storebrand.scheduledtask.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;

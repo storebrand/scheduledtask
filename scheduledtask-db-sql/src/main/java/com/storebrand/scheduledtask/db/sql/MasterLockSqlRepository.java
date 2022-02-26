@@ -19,7 +19,7 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.MasterLockRepository;

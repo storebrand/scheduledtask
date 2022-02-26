@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-import com.storebrand.scheduledtask.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
 
 /**
