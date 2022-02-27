@@ -394,12 +394,12 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                     throw new DuplicateScheduledTaskException(key);
                 }
                 RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
-                        .keepMaxDays(_deleteRunsAfter)
-                        .keepMaxDaysSuccessful(_deleteSuccessfulRunsAfter)
-                        .keepMaxDaysFailed(_deleteFailedRunsAfterDays)
-                        .keepLastTotal(_keepMaxRuns)
-                        .keepLastSuccessful(_keepMaxSuccessfulRuns)
-                        .keepLastFailed(_keepMaxFailedRuns).build();
+                        .deleteRunsAfterDays(_deleteRunsAfter)
+                        .deleteSuccessfulRunsAfterDays(_deleteSuccessfulRunsAfter)
+                        .deleteFailedRunsAfterDays(_deleteFailedRunsAfterDays)
+                        .keepMaxRuns(_keepMaxRuns)
+                        .keepMaxSuccessfulRuns(_keepMaxSuccessfulRuns)
+                        .keepMaxFailedRuns(_keepMaxFailedRuns).build();
 
                 ScheduledTaskConfig config = new ScheduledTaskConfig(_scheduleName, _cronExpression,
                         _maxExpectedMinutesToRun, _criticality, _recovery, retentionPolicy);

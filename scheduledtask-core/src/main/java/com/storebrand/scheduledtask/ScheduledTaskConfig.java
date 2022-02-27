@@ -85,8 +85,8 @@ public class ScheduledTaskConfig {
 
         private final int _deleteRunsAfterDays;
 
-        private RetentionPolicyImpl(int keepMaxFailedRuns, int keepMaxSuccessfulRuns, int keepMaxRuns, int deleteFailedRunsAfterDays,
-                int deleteSuccessfulRunsAfterDays, int deleteRunsAfterDays) {
+        private RetentionPolicyImpl(int keepMaxSuccessfulRuns, int keepMaxFailedRuns, int keepMaxRuns, int deleteSuccessfulRunsAfterDays,
+                int deleteFailedRunsAfterDays, int deleteRunsAfterDays) {
             _keepMaxFailedRuns = keepMaxFailedRuns;
             _keepMaxSuccessfulRuns = keepMaxSuccessfulRuns;
             _keepMaxRuns = keepMaxRuns;
@@ -96,7 +96,7 @@ public class ScheduledTaskConfig {
         }
 
         public static RetentionPolicy keepMaxDays(int keepMaxDays) {
-            return new Builder().keepMaxDays(keepMaxDays).build();
+            return new Builder().deleteRunsAfterDays(keepMaxDays).build();
         }
 
         @Override
@@ -136,49 +136,49 @@ public class ScheduledTaskConfig {
         }
 
         public static class Builder {
-            private int _keepLastSuccessful;
-            private int _keepLastFailed;
+            private int _keepMaxSuccessfulRuns;
+            private int _keepMaxFailedRuns;
 
-            private int _keepLastTotal;
+            private int _keepMaxRuns;
 
-            private int _keepMaxDaysSuccessful;
-            private int _keepMaxDaysFailed;
+            private int _deleteSuccessfulRunsAfterDays;
+            private int _deleteFailedRunsAfterDays;
 
-            private int _keepMaxDays = 365; // Default one year
+            private int _deleteRunsAfterDays = ScheduledTaskInitializer.DEFAULT_DELETE_RUNS_AFTER_DAYS; // Default one year
 
-            public Builder keepLastSuccessful(int keepLastSuccessful) {
-                _keepLastSuccessful = keepLastSuccessful;
+            public Builder keepMaxSuccessfulRuns(int keepMaxSuccessfulRuns) {
+                _keepMaxSuccessfulRuns = keepMaxSuccessfulRuns;
                 return this;
             }
 
-            public Builder keepLastFailed(int keepLastFailed) {
-                _keepLastFailed = keepLastFailed;
+            public Builder keepMaxFailedRuns(int keepMaxFailedRuns) {
+                _keepMaxFailedRuns = keepMaxFailedRuns;
                 return this;
             }
 
-            public Builder keepLastTotal(int keepLastTotal) {
-                _keepLastTotal = keepLastTotal;
+            public Builder keepMaxRuns(int keepMaxRuns) {
+                _keepMaxRuns = keepMaxRuns;
                 return this;
             }
 
-            public Builder keepMaxDaysSuccessful(int keepMaxDaysSuccessful) {
-                _keepMaxDaysSuccessful = keepMaxDaysSuccessful;
+            public Builder deleteSuccessfulRunsAfterDays(int days) {
+                _deleteSuccessfulRunsAfterDays = days;
                 return this;
             }
 
-            public Builder keepMaxDaysFailed(int keepMaxDaysFailed) {
-                _keepLastFailed = keepMaxDaysFailed;
+            public Builder deleteFailedRunsAfterDays(int days) {
+                _deleteFailedRunsAfterDays = days;
                 return this;
             }
 
-            public Builder keepMaxDays(int keepMaxDays) {
-                _keepMaxDays = keepMaxDays;
+            public Builder deleteRunsAfterDays(int days) {
+                _deleteRunsAfterDays = days;
                 return this;
             }
 
             public RetentionPolicy build() {
-                return new RetentionPolicyImpl(_keepLastSuccessful, _keepLastFailed, _keepLastTotal,
-                        _keepMaxDaysSuccessful, _keepMaxDaysFailed, _keepMaxDays);
+                return new RetentionPolicyImpl(_keepMaxSuccessfulRuns, _keepMaxFailedRuns, _keepMaxRuns,
+                        _deleteSuccessfulRunsAfterDays, _deleteFailedRunsAfterDays, _deleteRunsAfterDays);
             }
         }
     }
