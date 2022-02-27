@@ -553,7 +553,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 LocalDateTime deleteOlder = LocalDateTime.now(_clock)
                         .minusDays(retentionPolicy.getDeleteSuccessfulRunsAfterDays());
 
-                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, null);
+                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, State.DONE);
             }
 
             // ?: Is delete failed runs after days defined?
@@ -563,7 +563,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 LocalDateTime deleteOlder = LocalDateTime.now(_clock)
                         .minusDays(retentionPolicy.getDeleteFailedRunsAfterDays());
 
-                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, null);
+                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, State.FAILED);
             }
 
             // TODO: Keep only n records
@@ -579,31 +579,35 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     }
 
     private int executeDelete(Connection sqlConnection,
-            String scheduleName, LocalDateTime deleteOlder, String status) throws SQLException {
+            String scheduleName, LocalDateTime deleteOlder, State status) throws SQLException {
 
-        String where = " WHERE scheduleName = ?"
+        String where = " WHERE schedule_name = ?"
                 + " AND run_start <= ?";
+        // ?: Are we querying for a specific status?
         if (status != null) {
+            // Yes -> Add specific status to query
             where += " AND status = ? ";
         }
+        else {
+            // No -> Then we should delete DONE and FAILED statuses. We should not delete runs that are not complete.
+            where += " AND status IN (?, ?) ";
+        }
 
-        String deleteLogs = "DELETE * FROM " + SCHEDULE_LOG_ENTRY_TABLE + " l "
-                + " INNER JOIN " + SCHEDULE_RUN_TABLE + " sr "
-                + " ON sr.instance_id = l.instance_id "
-                + where
-                + " ORDER BY schedulerName, run_start DESC, status";
+        String deleteLogs = "DELETE FROM " + SCHEDULE_LOG_ENTRY_TABLE
+                + " WHERE instance_id IN (SELECT instance_id FROM " + SCHEDULE_RUN_TABLE + where + ")";
 
-
-
-        String deleteRuns = "DELETE * FROM " + SCHEDULE_RUN_TABLE
-                + where
-                + " ORDER BY schedulerName, run_start DESC, status";
+        String deleteRuns = "DELETE FROM " + SCHEDULE_RUN_TABLE
+                + where;
 
         try (PreparedStatement pStmt = sqlConnection.prepareStatement(deleteLogs)) {
             pStmt.setString(1, scheduleName);
             pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder));
             if (status != null) {
-                pStmt.setString(3, status);
+                pStmt.setString(3, status.name());
+            }
+            else {
+                pStmt.setString(3, State.DONE.name());
+                pStmt.setString(4, State.FAILED.name());
             }
 
             pStmt.executeUpdate();
@@ -613,7 +617,11 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             pStmt.setString(1, scheduleName);
             pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder));
             if (status != null) {
-                pStmt.setString(3, status);
+                pStmt.setString(3, status.name());
+            }
+            else {
+                pStmt.setString(3, State.DONE.name());
+                pStmt.setString(4, State.FAILED.name());
             }
 
             return pStmt.executeUpdate();
