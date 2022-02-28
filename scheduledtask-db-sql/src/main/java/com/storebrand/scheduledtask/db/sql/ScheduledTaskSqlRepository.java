@@ -534,8 +534,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             return;
         }
 
+        int deletedRecords = 0;
         try (Connection sqlConnection = _dataSource.getConnection()) {
-            int deletedRecords = 0;
 
             // ?: Is delete runs after days defined?
             if (retentionPolicy.getDeleteRunsAfterDays() > 0) {
@@ -604,15 +604,18 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 }
             }
 
-
             if (deletedRecords > 0) {
                 log.info("Scheduled task " + scheduleName + ": Deleted " + deletedRecords + " old records.");
             }
         }
-        catch (SQLException throwables) {
-            throw new RuntimeException(throwables);
+        catch (Throwable ex) {
+            // We should not crash out if retention policy execution fails. We just log it, and continue.
+            log.error("Scheduled task " + scheduleName + ": Error executing retention policy.", ex);
+            if (deletedRecords > 0) {
+                log.info("Scheduled task " + scheduleName + ": Still managed to deleted "
+                        + deletedRecords + " old records, even with exception thrown during execution of policy.");
+            }
         }
-
     }
 
     private Optional<LocalDateTime> findDeleteOlderForKeepMax(Connection sqlConnection, String scheduleName, int keep,
