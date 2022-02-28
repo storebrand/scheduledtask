@@ -24,6 +24,11 @@ import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 
+/**
+ * Test that retention policies keep the correct runs as specified in the policy.
+ *
+ * @author Kristian Hiim
+ */
 public class ScheduledTaskSqlRepositoryRetentionTest {
     private final JdbcTemplate _jdbcTemplate;
     private final DataSource _dataSource;
@@ -54,7 +59,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
     }
 
     @Test
-    public void removeOldRunsWithDefaultRetentionPolicy_ok() {
+    public void removeOldRunsWithDefaultRetentionPolicy() {
         // :: Setup
         createRunWithStatus("test-schedule", LocalDateTime.of(2021, 1, 1, 1, 1),
                 "instance1", State.DONE);
@@ -82,7 +87,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
     }
 
     @Test
-    public void removeOldFailedRunsWithCustomRetentionPolicy_ok() {
+    public void removeOldFailedRunsWithCustomRetentionPolicy() {
         // :: Setup
         createRunWithStatus("test-schedule", LocalDateTime.of(2021, 1, 1, 1, 1),
                 "instance1", State.DONE);
@@ -114,7 +119,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
     }
 
     @Test
-    public void removeOldSuccessfulRunsWithCustomRetentionPolicy_ok() {
+    public void removeOldSuccessfulRunsWithCustomRetentionPolicy() {
         // :: Setup
         createRunWithStatus("test-schedule", LocalDateTime.of(2021, 1, 1, 1, 1),
                 "instance1", State.DONE);
@@ -131,6 +136,100 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
         RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
                 .deleteSuccessfulRunsAfterDays(365)
                 .deleteRunsAfterDays(3000)
+                .build();
+        _clock.setFixedClock(now.atZone(ZoneId.systemDefault()).toInstant());
+        _repository.executeRetentionPolicy("test-schedule", retentionPolicy);
+
+        // :: Assert
+        List<ScheduledRunDto> scheduledRuns = _repository.getScheduleRunsBetween("test-schedule",
+                LocalDateTime.of(2000, 1, 1, 1, 1),
+                LocalDateTime.of(3000, 1, 1, 1, 1));
+        assertEquals(2, scheduledRuns.size());
+        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
+        assertEquals("instance2", scheduledRuns.get(1).getInstanceId());
+    }
+
+
+    @Test
+    public void keepMaxRunsWithRetentionPolicy() {
+        // :: Setup
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 1, 1, 1, 1),
+                "instance1", State.DONE);
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 2, 1, 1, 1),
+                "instance2", State.FAILED);
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 3, 1, 1, 1),
+                "instance3", State.DONE);
+
+        createRunWithStatus("test-schedule", LocalDateTime.of(2022, 1, 1, 1, 1),
+                "instance4", State.DONE);
+
+        // :: Act
+        LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
+        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+                .deleteRunsAfterDays(0)
+                .keepMaxRuns(2)
+                .build();
+        _clock.setFixedClock(now.atZone(ZoneId.systemDefault()).toInstant());
+        _repository.executeRetentionPolicy("test-schedule", retentionPolicy);
+
+        // :: Assert
+        List<ScheduledRunDto> scheduledRuns = _repository.getScheduleRunsBetween("test-schedule",
+                LocalDateTime.of(2000, 1, 1, 1, 1),
+                LocalDateTime.of(3000, 1, 1, 1, 1));
+        assertEquals(2, scheduledRuns.size());
+        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
+        assertEquals("instance3", scheduledRuns.get(1).getInstanceId());
+    }
+
+    @Test
+    public void keepMaxSuccessfulRunsWithRetentionPolicy() {
+        // :: Setup
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 1, 1, 1, 1),
+                "instance1", State.DONE);
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 2, 1, 1, 1),
+                "instance2", State.FAILED);
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 3, 1, 1, 1),
+                "instance3", State.DONE);
+
+        createRunWithStatus("test-schedule", LocalDateTime.of(2022, 1, 1, 1, 1),
+                "instance4", State.DONE);
+
+        // :: Act
+        LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
+        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+                .deleteRunsAfterDays(3000)
+                .keepMaxSuccessfulRuns(1)
+                .build();
+        _clock.setFixedClock(now.atZone(ZoneId.systemDefault()).toInstant());
+        _repository.executeRetentionPolicy("test-schedule", retentionPolicy);
+
+        // :: Assert
+        List<ScheduledRunDto> scheduledRuns = _repository.getScheduleRunsBetween("test-schedule",
+                LocalDateTime.of(2000, 1, 1, 1, 1),
+                LocalDateTime.of(3000, 1, 1, 1, 1));
+        assertEquals(2, scheduledRuns.size());
+        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
+        assertEquals("instance2", scheduledRuns.get(1).getInstanceId());
+    }
+
+    @Test
+    public void keepMaxFailedRunsWithRetentionPolicy() {
+        // :: Setup
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 1, 1, 1, 1),
+                "instance1", State.FAILED);
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 2, 1, 1, 1),
+                "instance2", State.DONE);
+        createRunWithStatus("test-schedule", LocalDateTime.of(2021, 3, 1, 1, 1),
+                "instance3", State.FAILED);
+
+        createRunWithStatus("test-schedule", LocalDateTime.of(2022, 1, 1, 1, 1),
+                "instance4", State.FAILED);
+
+        // :: Act
+        LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
+        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+                .deleteRunsAfterDays(3000)
+                .keepMaxFailedRuns(1)
                 .build();
         _clock.setFixedClock(now.atZone(ZoneId.systemDefault()).toInstant());
         _repository.executeRetentionPolicy("test-schedule", retentionPolicy);

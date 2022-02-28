@@ -36,6 +36,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * Handles storing and updating of the {@link ScheduledTaskServiceImpl} schedules and run logs.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.02
+ * @author Kristian Hiim
  */
 public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskSqlRepository.class);
@@ -567,6 +568,42 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             }
 
             // TODO: Keep only n records
+            // ?: Have we defined max runs to keep?
+            if (retentionPolicy.getKeepMaxRuns() > 0) {
+                // -> Yes, then should only keep this many
+
+                Optional<LocalDateTime> deleteOlder = findDeleteOlderForKeepMax(sqlConnection, scheduleName,
+                        retentionPolicy.getKeepMaxRuns(), null);
+
+                if (deleteOlder.isPresent()) {
+                    deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder.get(), null);
+                }
+            }
+
+            // ?: Have we defined max successful runs to keep?
+            if (retentionPolicy.getKeepMaxSuccessfulRuns() > 0) {
+                // -> Yes, then should only keep this many
+
+                Optional<LocalDateTime> deleteOlder = findDeleteOlderForKeepMax(sqlConnection, scheduleName,
+                        retentionPolicy.getKeepMaxSuccessfulRuns(), State.DONE);
+
+                if (deleteOlder.isPresent()) {
+                    deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder.get(), State.DONE);
+                }
+            }
+
+            // ?: Have we defined max failed runs to keep?
+            if (retentionPolicy.getKeepMaxFailedRuns() > 0) {
+                // -> Yes, then should only keep this many
+
+                Optional<LocalDateTime> deleteOlder = findDeleteOlderForKeepMax(sqlConnection, scheduleName,
+                        retentionPolicy.getKeepMaxFailedRuns(), State.FAILED);
+
+                if (deleteOlder.isPresent()) {
+                    deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder.get(), State.FAILED);
+                }
+            }
+
 
             if (deletedRecords > 0) {
                 log.info("Scheduled task " + scheduleName + ": Deleted " + deletedRecords + " old records.");
@@ -576,6 +613,45 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             throw new RuntimeException(throwables);
         }
 
+    }
+
+    private Optional<LocalDateTime> findDeleteOlderForKeepMax(Connection sqlConnection, String scheduleName, int keep,
+            State status) throws SQLException {
+        String sql = "SELECT run_start FROM " + SCHEDULE_RUN_TABLE + " WHERE schedule_name = ? ";
+        // ?: Are we querying for a specific status?
+        if (status != null) {
+            // Yes -> Add specific status to query
+            sql += " AND status = ? ";
+        }
+        else {
+            // No -> Then we should delete DONE and FAILED statuses. We should not delete runs that are not complete.
+            sql += " AND status IN (?, ?) ";
+        }
+        sql += " ORDER BY schedule_name, run_start DESC, status "
+                + " OFFSET ? ROWS "
+                + " FETCH NEXT 1 ROWS ONLY ";
+
+        try (PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
+            pStmt.setString(1, scheduleName);
+            if (status != null) {
+                pStmt.setString(2, status.name());
+
+                pStmt.setInt(3, keep);
+            }
+            else {
+                pStmt.setString(2, State.DONE.name());
+                pStmt.setString(3, State.FAILED.name());
+
+                pStmt.setInt(4, keep);
+            }
+
+            ResultSet rs = pStmt.executeQuery();
+            if (rs.next()) {
+                Timestamp runStart = rs.getTimestamp("run_start");
+                return Optional.of(runStart.toLocalDateTime());
+            }
+        }
+        return Optional.empty();
     }
 
     private int executeDelete(Connection sqlConnection,

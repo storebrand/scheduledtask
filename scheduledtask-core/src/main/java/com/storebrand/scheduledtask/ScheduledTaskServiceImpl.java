@@ -40,12 +40,6 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskServiceImpl.class);
     private final Map<String, ScheduledTaskImpl> _schedules = new ConcurrentHashMap<>();
 
-    private static final String MONITOR_CHANGE_ACTIVE_PARAM = "toggleActive.local";
-    private static final String MONITOR_EXECUTE_SCHEDULER = "executeScheduler.local";
-    private static final String MONITOR_CHANGE_CRON = "changeCron.local";
-    private static final String MONITOR_SHOW_RUNS = "showRuns.local";
-    private static final String MONITOR_SHOW_LOGS = "showLogs.local";
-    private static final String MONITOR_CHANGE_CRON_SCHEDULER_NAME = "changeCronSchedulerName.local";
     private static final String MASTER_LOCK_NAME = "scheduledTask";
     private static final long SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
     private static final long MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
