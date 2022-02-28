@@ -21,7 +21,7 @@ public class ScheduledTaskConfig {
     public ScheduledTaskConfig(String name, String cronExpression, int maxExpectedMinutesToRun,
             Criticality criticality, Recovery recovery) {
         this(name, cronExpression, maxExpectedMinutesToRun, criticality, recovery,
-                RetentionPolicyImpl.DEFAULT_RETENTION_POLICY);
+                StaticRetentionPolicy.DEFAULT_RETENTION_POLICY);
     }
 
     public ScheduledTaskConfig(String name, String cronExpression, int maxExpectedMinutesToRun,
@@ -71,7 +71,7 @@ public class ScheduledTaskConfig {
      * instead of a maximum amount of days. "Keep last total" will override any other setting, and will not allow more
      * than this amount of runs to be kept.
      */
-    public static class RetentionPolicyImpl implements RetentionPolicy {
+    public static class StaticRetentionPolicy implements RetentionPolicy {
 
         public static final RetentionPolicy DEFAULT_RETENTION_POLICY = new Builder().build();
 
@@ -85,7 +85,7 @@ public class ScheduledTaskConfig {
 
         private final int _deleteRunsAfterDays;
 
-        private RetentionPolicyImpl(int keepMaxSuccessfulRuns, int keepMaxFailedRuns, int keepMaxRuns, int deleteSuccessfulRunsAfterDays,
+        private StaticRetentionPolicy(int keepMaxSuccessfulRuns, int keepMaxFailedRuns, int keepMaxRuns, int deleteSuccessfulRunsAfterDays,
                 int deleteFailedRunsAfterDays, int deleteRunsAfterDays) {
             _keepMaxFailedRuns = keepMaxFailedRuns;
             _keepMaxSuccessfulRuns = keepMaxSuccessfulRuns;
@@ -177,7 +177,7 @@ public class ScheduledTaskConfig {
             }
 
             public RetentionPolicy build() {
-                return new RetentionPolicyImpl(_keepMaxSuccessfulRuns, _keepMaxFailedRuns, _keepMaxRuns,
+                return new StaticRetentionPolicy(_keepMaxSuccessfulRuns, _keepMaxFailedRuns, _keepMaxRuns,
                         _deleteSuccessfulRunsAfterDays, _deleteFailedRunsAfterDays, _deleteRunsAfterDays);
             }
         }

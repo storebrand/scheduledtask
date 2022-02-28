@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
-import com.storebrand.scheduledtask.ScheduledTaskConfig.RetentionPolicyImpl;
+import com.storebrand.scheduledtask.ScheduledTaskConfig.StaticRetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
@@ -73,7 +73,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
 
         // :: Act
         LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
-        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+        RetentionPolicy retentionPolicy = new StaticRetentionPolicy.Builder()
                 .build();
         _clock.setFixedClock(now.atZone(ZoneId.systemDefault()).toInstant());
         _repository.executeRetentionPolicy("test-schedule", retentionPolicy);
@@ -101,7 +101,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
 
         // :: Act
         LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
-        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+        RetentionPolicy retentionPolicy = new StaticRetentionPolicy.Builder()
                 .deleteFailedRunsAfterDays(365)
                 .deleteRunsAfterDays(3000)
                 .build();
@@ -133,7 +133,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
 
         // :: Act
         LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
-        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+        RetentionPolicy retentionPolicy = new StaticRetentionPolicy.Builder()
                 .deleteSuccessfulRunsAfterDays(365)
                 .deleteRunsAfterDays(3000)
                 .build();
@@ -165,7 +165,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
 
         // :: Act
         LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
-        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+        RetentionPolicy retentionPolicy = new StaticRetentionPolicy.Builder()
                 .deleteRunsAfterDays(0)
                 .keepMaxRuns(2)
                 .build();
@@ -196,7 +196,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
 
         // :: Act
         LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
-        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+        RetentionPolicy retentionPolicy = new StaticRetentionPolicy.Builder()
                 .deleteRunsAfterDays(3000)
                 .keepMaxSuccessfulRuns(1)
                 .build();
@@ -227,7 +227,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
 
         // :: Act
         LocalDateTime now = LocalDateTime.of(2022, 4, 1, 1, 1);
-        RetentionPolicy retentionPolicy = new RetentionPolicyImpl.Builder()
+        RetentionPolicy retentionPolicy = new StaticRetentionPolicy.Builder()
                 .deleteRunsAfterDays(3000)
                 .keepMaxFailedRuns(1)
                 .build();
