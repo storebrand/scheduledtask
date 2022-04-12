@@ -12,12 +12,12 @@ dependencies {
     testImplementation('org.junit.jupiter:junit-jupiter')
 
     // JDBC and H2 database used for testing
-    testImplementation 'org.springframework:spring-jdbc:5.3.15'
+    testImplementation "org.springframework:spring-jdbc:$springVersion"
     testImplementation 'com.h2database:h2:1.4.200'
 
     // Placing logback-classic on testCompile path as we need some form of logging implementation.
     //testImplementation "org.slf4j:slf4j-api:$slf4jVersion"
-    testRuntimeOnly 'ch.qos.logback:logback-classic:1.2.5'
+    testRuntimeOnly "ch.qos.logback:logback-classic:$logbackClassicVersion"
 }
 
 test {
