@@ -14,8 +14,8 @@ subprojects {
     apply plugin: 'maven-publish'
     apply plugin: 'com.github.spotbugs'
 
-    sourceCompatibility = 1.8
-    targetCompatibility = 1.8
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
 
     compileJava {
         options.encoding = 'UTF-8'
@@ -78,8 +78,8 @@ subprojects {
         publications {
             mavenJava(MavenPublication) {
                 pom {
-                    name = 'HealthCheck'
-                    description = 'Health checks for services.'
+                    name = 'scheduledtask'
+                    description = 'Scheduled tasks for services.'
                 }
                 from components.java
             }

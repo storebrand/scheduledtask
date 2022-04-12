@@ -2,8 +2,6 @@ package com.storebrand.scheduledtask;
 
 import static java.util.stream.Collectors.toMap;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -23,7 +21,6 @@ import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig.StaticRetentionPolicy;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
-import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -58,7 +55,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     @Override
     public void close() {
         // Shutdown, loop through all treads and inform them we are shutting down.
-        _schedules.entrySet().stream().forEach(entry -> {
+        _schedules.entrySet().forEach(entry -> {
             log.info("Shutting down thread '" + entry.getKey() + "'");
             entry.getValue().killSchedule();
         });
@@ -103,7 +100,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     /**
      * Helper method that are used to stop a given schedule, will be triggering {@link ScheduledTask#stop()}
-     * @see {@link ScheduledTask#stop()}
+     * @see ScheduledTask#stop()
      */
     @Override
     public void stop(String schedulerName) {
@@ -115,7 +112,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     /**
      * Helper method that are used to start a given schedule, will be triggering {@link ScheduledTask#start()}
-     * @see {@link ScheduledTask#start()}
+     * @see ScheduledTask#start()
      */
     @Override
     public void start(String schedulerName) {
@@ -127,7 +124,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     /**
      * Helper method that are used to run given schedule as soon as possbile. Will be triggering {@link ScheduledTask#runNow()}
-     * @see {@link ScheduledTask#runNow()}
+     * @see ScheduledTask#runNow()
      */
     @Override
     public void runNow(String schedulerName) {
@@ -278,11 +275,17 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             synchronized (_syncObject) {
                 _syncObject.notifyAll();
             }
+            try {
+                _runner.join(1000);
+            }
+            catch (InterruptedException e) {
+                // Ignore interrupt here, we do best effort to wait for the runner thread to stop.
+            }
             // Release the lock, only the node that is currently master are allowed to release it
             if (_masterLockRepository.releaseLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                 log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
-                        + " with nodeName '" + Host.getLocalHostName() + "' "
-                        + " are releasing the lock");
+                        + "with nodeName '" + Host.getLocalHostName() + "' "
+                        + "are releasing the lock");
 
             }
         }

@@ -44,6 +44,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
     private final DataSource _dataSource;
     private final Clock _clock;
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "This is standard dependency injection.")
     public MasterLockSqlRepository(DataSource dataSource, Clock clock) {
         _dataSource = dataSource;
         _clock = clock;

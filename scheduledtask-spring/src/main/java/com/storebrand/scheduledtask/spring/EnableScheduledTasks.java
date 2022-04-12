@@ -34,7 +34,7 @@ import com.storebrand.scheduledtask.spring.EnableScheduledTasks.ScheduledTaskBea
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@Import({ ScheduledTaskBeanRegistration.class })
+@Import({ ScheduledTaskAnnotationRegistration.class, ScheduledTaskBeanRegistration.class })
 public @interface EnableScheduledTasks {
 
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)

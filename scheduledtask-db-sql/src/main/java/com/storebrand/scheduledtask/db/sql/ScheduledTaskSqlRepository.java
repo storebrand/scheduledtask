@@ -46,6 +46,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     private final DataSource _dataSource;
     private final Clock _clock;
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "This is standard dependency injection.")
     public ScheduledTaskSqlRepository(DataSource dataSource, Clock clock) {
         _dataSource = dataSource;
         _clock = clock;

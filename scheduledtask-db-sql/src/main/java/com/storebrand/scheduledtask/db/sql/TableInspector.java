@@ -20,6 +20,8 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 /**
  * Will check and see if a table exists in the database and retrieve the {@link TableColumn}s and Primary keys names so
  * the calling code can inspect to see if all the fields are in this database.
@@ -38,6 +40,8 @@ class TableInspector {
     private static final String MIGRATION_FILE_NAME = "V_1__Create_initial_tables.sql";
     private final DataSource _dataSource;
 
+    @SuppressFBWarnings(value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",
+            justification = "False positive in JDK 11")
     public TableInspector(DataSource dataSource, String tableName) {
         _tableName = tableName;
         _dataSource = dataSource;
@@ -57,6 +61,8 @@ class TableInspector {
      * Checks the table version table to see if the database are using the correct {@link #MIGRATION_FILE_NAME} version.
      *
      */
+    @SuppressFBWarnings(value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",
+            justification = "False positive in JDK 11")
     public int getTableVersion() {
         String sql = "SELECT * FROM " + TABLE_VERSION;
 
@@ -208,6 +214,8 @@ class TableInspector {
         return Collections.unmodifiableMap(_primaryKeys);
     }
 
+    @SuppressFBWarnings(value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",
+            justification = "False positive in JDK 11")
     private Map<String, TableColumn> extractColumns(DatabaseMetaData metaData, String tableName) {
         // Get the table columns
         try (ResultSet columns = metaData.getColumns(null, null, tableName, null)) {
