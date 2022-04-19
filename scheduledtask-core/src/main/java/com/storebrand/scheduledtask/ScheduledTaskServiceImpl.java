@@ -143,7 +143,6 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             log.info("Awakening thread '" + entry.getKey() + "'");
             entry.getValue().notifyThread();
         });
-
     }
 
     // ===== MasterLock and Schedule ===================================================================================
