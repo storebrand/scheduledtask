@@ -50,19 +50,29 @@ public class ScheduledTaskHealthCheck {
         CRITICALITY_AXES = Collections.unmodifiableMap(criticalityAxes);
     }
 
-    private final ScheduledTaskService _scheduledTaskService;
+    private final Object _lockObject = new Object();
+
     private final Clock _clock;
 
-    @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public ScheduledTaskHealthCheck(ScheduledTaskService scheduledTaskService, Clock clock) {
-        _scheduledTaskService = scheduledTaskService;
+    private volatile ScheduledTaskService _scheduledTaskService;
+    private volatile CheckSpecification _checkSpecification;
+
+    public ScheduledTaskHealthCheck(Clock clock) {
         _clock = clock;
     }
 
     /**
      * Method for initializing health checks for scheduled tasks.
      */
-    public void initialize(HealthCheckRegistry registry) {
+    @SuppressFBWarnings("EI_EXPOSE_REP2")
+    public void initialize(ScheduledTaskService scheduledTaskService, HealthCheckRegistry registry) {
+        synchronized (_lockObject) {
+            if (_scheduledTaskService != null) {
+                // Already initialized - do nothing
+                return;
+            }
+            _scheduledTaskService = scheduledTaskService;
+        }
         registry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks master lock"),
                 this::masterLockHealthCheck);
 
@@ -106,81 +116,120 @@ public class ScheduledTaskHealthCheck {
      * Health checks for verifying that scheduled tasks run as expected.
      */
     public void scheduledTaskHealthCheck(CheckSpecification spec) {
-        spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
-            Map<String, Schedule> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository().stream()
-                    .collect(toMap(Schedule::getScheduleName, schedule -> schedule));
-            TableBuilder tableBuilder = new TableBuilder(
-                    "Schedule",
-                    "Active",
-                    "Default cron",
-                    "Running",
-                    "Overdue",
-                    "Status");
-            boolean failed = false;
-            for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
-                boolean scheduleFailed;
-                // Is this schedule active?
-                boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
-                scheduleFailed = !isActive;
-
-                // has overridden CronExpression / default cron
-                boolean defaultCron = !allSchedulesFromDb.get(entry.getKey())
-                        .getOverriddenCronExpression().isPresent();
-                scheduleFailed = scheduleFailed || !defaultCron;
-
-                // Is this schedule overdue. This is stored in the memory version of the current run.
-                // It is only overdue if it is active, is running and marked as overdue.
-                boolean isOverdue = entry.getValue().isOverdue()
-                        && entry.getValue().isActive()
-                        && entry.getValue().isRunning();
-                scheduleFailed = scheduleFailed || isOverdue;
-
-                // Add a table row
-                tableBuilder.addRow(entry.getKey(),
-                        isActive,
-                        defaultCron,
-                        entry.getValue().isRunning(),
-                        isOverdue,
-                        scheduleFailed ? "WARN" : "OK");
-                failed = failed || scheduleFailed;
-            }
-            context.text(tableBuilder.toString());
-            return context.faultConditionally(failed, "Schedules status");
-        });
-
-        // Add a blank line to add som "air" between the two section
-        spec.staticText("");
-        // Render out based on the set Healthlevel. We check the lastRun to see if this failed or if the schedule is
-        // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
-        // set the defined getHealthCheckLevel() for this schedule.
-        for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
-            Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getCriticality()));
-            if (entry.getValue().getRecovery() == Recovery.MANUAL_INTERVENTION) {
-                axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);
-            }
-            spec.check(Responsible.DEVELOPERS, axes.toArray(new Axis[]{}), context -> {
-                Optional<ScheduleRunContext> lastRunForSchedule =
-                        entry.getValue().getLastScheduleRun();
-                boolean runFailed = false;
-                // :? Did the last run fail?
-                if (lastRunForSchedule.isPresent() && State.FAILED.equals(lastRunForSchedule.get().getStatus())) {
-                    // -> Yes this status failed
-                    runFailed = true;
-                    context.text(entry.getKey() + " last run failed!");
+        boolean isRespec = false;
+        // In order to support adding new scheduled tasks after the first time this check was specified we keep a
+        // reference to the CheckSpecification. If we already have that reference we know that this is a respec, and
+        // need to do a commit ourselves. To ensure that this is handled correctly we do this in a synchronized block.
+        synchronized (_lockObject) {
+            if (_checkSpecification != null) {
+                isRespec = true;
+                // Do a sanity check.
+                if (spec != _checkSpecification) {
+                    throw new AssertionError("Re-speccing scheduledTaskHealthCheck with a new CheckSpecification."
+                            + " This should never happen."
+                            + " We should always use the same CheckSpecification for this health check.");
                 }
+            }
+            else {
+                _checkSpecification = spec;
+            }
 
-                Long runTime = entry.getValue().runTimeInMinutes().orElse(0L);
-                long wayOverdueTime = 10L * entry.getValue().getMaxExpectedMinutesToRun();
-                // :? Is this schedule way overdue?
-                if (runTime > wayOverdueTime) {
-                    // -> Yes this run has taken 10 times the estimated amount, so we should display a warning.
-                    runFailed = true;
-                    context.text(entry.getKey() + " is taking more than 10x the estimated runtime!");
+            spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
+                Map<String, Schedule> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository().stream()
+                        .collect(toMap(Schedule::getScheduleName, schedule -> schedule));
+                TableBuilder tableBuilder = new TableBuilder(
+                        "Schedule",
+                        "Active",
+                        "Default cron",
+                        "Running",
+                        "Overdue",
+                        "Status");
+                boolean failed = false;
+                for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
+                    boolean scheduleFailed;
+                    // Is this schedule active?
+                    boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
+                    scheduleFailed = !isActive;
+
+                    // has overridden CronExpression / default cron
+                    boolean defaultCron = !allSchedulesFromDb.get(entry.getKey())
+                            .getOverriddenCronExpression().isPresent();
+                    scheduleFailed = scheduleFailed || !defaultCron;
+
+                    // Is this schedule overdue. This is stored in the memory version of the current run.
+                    // It is only overdue if it is active, is running and marked as overdue.
+                    boolean isOverdue = entry.getValue().isOverdue()
+                            && entry.getValue().isActive()
+                            && entry.getValue().isRunning();
+                    scheduleFailed = scheduleFailed || isOverdue;
+
+                    // Add a table row
+                    tableBuilder.addRow(entry.getKey(),
+                            isActive,
+                            defaultCron,
+                            entry.getValue().isRunning(),
+                            isOverdue,
+                            scheduleFailed ? "WARN" : "OK");
+                    failed = failed || scheduleFailed;
                 }
-
-                return context.faultConditionally(runFailed, entry.getKey() + " last run status");
-
+                context.text(tableBuilder.toString());
+                return context.faultConditionally(failed, "Schedules status");
             });
+
+            // Add a blank line to add som "air" between the two section
+            spec.staticText("");
+            // Render out based on the set Healthlevel. We check the lastRun to see if this failed or if the schedule is
+            // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
+            // set the defined getHealthCheckLevel() for this schedule.
+            for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
+                Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getCriticality()));
+                if (entry.getValue().getRecovery() == Recovery.MANUAL_INTERVENTION) {
+                    axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);
+                }
+                spec.check(Responsible.DEVELOPERS, axes.toArray(new Axis[]{}), context -> {
+                    Optional<ScheduleRunContext> lastRunForSchedule =
+                            entry.getValue().getLastScheduleRun();
+                    boolean runFailed = false;
+                    // :? Did the last run fail?
+                    if (lastRunForSchedule.isPresent() && State.FAILED.equals(lastRunForSchedule.get().getStatus())) {
+                        // -> Yes this status failed
+                        runFailed = true;
+                        context.text(entry.getKey() + " last run failed!");
+                    }
+
+                    Long runTime = entry.getValue().runTimeInMinutes().orElse(0L);
+                    long wayOverdueTime = 10L * entry.getValue().getMaxExpectedMinutesToRun();
+                    // :? Is this schedule way overdue?
+                    if (runTime > wayOverdueTime) {
+                        // -> Yes this run has taken 10 times the estimated amount, so we should display a warning.
+                        runFailed = true;
+                        context.text(entry.getKey() + " is taking more than 10x the estimated runtime!");
+                    }
+
+                    return context.faultConditionally(runFailed, entry.getKey() + " last run status");
+
+                });
+            }
+
+            // ?: Is this a respec?
+            if (isRespec) {
+                // -> Yes, then we need to commit ourselves.
+                _checkSpecification.commit();
+            }
         }
+    }
+
+    /**
+     * Trigger a re-specify of the health check for scheduled tasks, in order to pick up any new scheduled tasks that
+     * may have been added before this was called the first time.
+     */
+    public void reSpecifyHealthCheck() {
+        CheckSpecification checkSpecification = _checkSpecification;
+        // ?: Have initial health check specification happened?
+        if (checkSpecification == null) {
+            // -> No, then we don't need to do any re-spec yet.
+            return;
+        }
+        scheduledTaskHealthCheck(checkSpecification);
     }
 }

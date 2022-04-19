@@ -71,10 +71,14 @@ public class ScheduledTaskServiceFactory extends AbstractFactoryBean<ScheduledTa
         return ScheduledTaskServiceImpl.class;
     }
 
+    protected Clock getClock() {
+        return _clock.orElseGet(Clock::systemDefaultZone);
+    }
+
     @Override
     protected ScheduledTaskService createInstance() {
         // Use Clock from Spring context if it is present, or use system default zone.
-        final Clock clock = _clock.orElseGet(Clock::systemDefaultZone);
+        final Clock clock = getClock();
 
         // Attempt to detect if we have a single DataSource in Spring context.
         // dataSource will be empty if there are 0 or more than 1 datasource.
