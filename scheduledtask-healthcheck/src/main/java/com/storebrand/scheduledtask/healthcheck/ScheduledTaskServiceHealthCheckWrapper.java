@@ -56,21 +56,6 @@ public class ScheduledTaskServiceHealthCheckWrapper implements ScheduledTaskServ
     }
 
     @Override
-    public void start(String schedulerName) {
-        _scheduledTaskService.start(schedulerName);
-    }
-
-    @Override
-    public void stop(String schedulerName) {
-        _scheduledTaskService.stop(schedulerName);
-    }
-
-    @Override
-    public void runNow(String schedulerName) {
-        _scheduledTaskService.runNow(schedulerName);
-    }
-
-    @Override
     public Optional<MasterLock> getMasterLock() {
         return _scheduledTaskService.getMasterLock();
     }
