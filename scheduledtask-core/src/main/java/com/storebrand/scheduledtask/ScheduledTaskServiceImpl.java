@@ -99,42 +99,6 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     }
 
     /**
-     * Helper method that are used to stop a given schedule, will be triggering {@link ScheduledTask#stop()}
-     * @see ScheduledTask#stop()
-     */
-    @Override
-    public void stop(String schedulerName) {
-        _schedules.computeIfPresent(schedulerName, (name, storebrandScheduled) -> {
-            storebrandScheduled.stop();
-            return storebrandScheduled;
-        });
-    }
-
-    /**
-     * Helper method that are used to start a given schedule, will be triggering {@link ScheduledTask#start()}
-     * @see ScheduledTask#start()
-     */
-    @Override
-    public void start(String schedulerName) {
-        _schedules.computeIfPresent(schedulerName, (name, storebrandScheduled) -> {
-            storebrandScheduled.start();
-            return storebrandScheduled;
-        });
-    }
-
-    /**
-     * Helper method that are used to run given schedule as soon as possbile. Will be triggering {@link ScheduledTask#runNow()}
-     * @see ScheduledTask#runNow()
-     */
-    @Override
-    public void runNow(String schedulerName) {
-        _schedules.computeIfPresent(schedulerName, (name, storebrandScheduled) -> {
-            storebrandScheduled.runNow();
-            return storebrandScheduled;
-        });
-    }
-
-    /**
      * Responsible of awaking all schedules.
      * Used by the {@link MasterLockKeeper} to awaken all nodes when it manages to aquire the master lock.
      */

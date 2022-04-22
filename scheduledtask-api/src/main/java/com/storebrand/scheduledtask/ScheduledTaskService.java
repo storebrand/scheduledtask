@@ -46,24 +46,6 @@ public interface ScheduledTaskService {
     List<Schedule> getSchedulesFromRepository();
 
     /**
-     * Helper method that are used to start a given schedule, will be triggering {@link ScheduledTask#start()}
-     * @see {@link ScheduledTask#start()}
-     */
-    void start(String schedulerName);
-
-    /**
-     * Helper method that are used to stop a given schedule, will be triggering {@link ScheduledTask#stop()}
-     * @see {@link ScheduledTask#stop()}
-     */
-    void stop(String schedulerName);
-
-    /**
-     * Helper method that are used to run given schedule as soon as possbile. Will be triggering {@link ScheduledTask#runNow()}
-     * @see {@link ScheduledTask#runNow()}
-     */
-    void runNow(String schedulerName);
-
-    /**
      * Get information if any node currently has the master lock and if so what node currently has it. There is
      * also a chance that the lock is not set to anyone and this return who had it last, to figure out if this
      * returns an old lock you need to check {@link MasterLock#getLockLastUpdatedTime()} by the following rules:
@@ -83,7 +65,7 @@ public interface ScheduledTaskService {
     Optional<MasterLock> getMasterLock();
 
     /**
-     * Checks if the running node is currenly the master node.
+     * Checks if the running node is currently the master node.
      */
     boolean hasMasterLock();
 
