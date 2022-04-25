@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 import com.storebrand.scheduledtask.ScheduledTask.Criticality;
 import com.storebrand.scheduledtask.ScheduledTask.Recovery;
-import com.storebrand.scheduledtask.ScheduledTaskInitializer;
+import com.storebrand.scheduledtask.ScheduledTaskBuilder;
 
 /**
  * Annotation that can be used to create a scheduled task for a method. Apply to any method and the task will run
@@ -37,7 +37,7 @@ public @interface ScheduledTask {
      * The maximum time this task is expected to run, in minutes. If it takes longer than this then something might be
      * wrong, and we should investigate the scheduled task.
      */
-    int maxExpectedMinutesToRun() default ScheduledTaskInitializer.DEFAULT_MAX_EXPECTED_MINUTES_TO_RUN;
+    int maxExpectedMinutesToRun() default ScheduledTaskBuilder.DEFAULT_MAX_EXPECTED_MINUTES_TO_RUN;
 
     /**
      * The {@link Criticality} of this scheduled task. Determines how important this task is, and can be used by
@@ -66,7 +66,7 @@ public @interface ScheduledTask {
      * Define the number of days we should keep a record of runs for this schedule. After this records will be deleted.
      * The default is to delete records after 365 days. Set to 0 to disable this rule.
      */
-    int deleteRunsAfterDays() default ScheduledTaskInitializer.DEFAULT_DELETE_RUNS_AFTER_DAYS;
+    int deleteRunsAfterDays() default ScheduledTaskBuilder.DEFAULT_DELETE_RUNS_AFTER_DAYS;
 
     /**
      * Define the number of days we should keep a record of successful runs for this schedule. This is not enabled by

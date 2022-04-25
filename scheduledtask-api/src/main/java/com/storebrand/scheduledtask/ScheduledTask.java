@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunnable;
 
@@ -16,9 +17,9 @@ import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunnable;
  */
 public interface ScheduledTask {
     /**
-     * Retrieve the name of the running schedule.
+     * Retrieve the name of the running schedule, which corresponds to {@link Schedule#getName()}.
      */
-    String getScheduleName();
+    String getName();
 
     /**
      * Get the criticality level of the running schedule.
@@ -99,7 +100,7 @@ public interface ScheduledTask {
 
     /**
      * Retrieve the cronExpression that where set when the schedule was created by
-     * {@link ScheduledTaskService#addScheduledTask(String, String, ScheduleRunnable)}.
+     * {@link ScheduledTaskService#buildScheduledTask(String, String, ScheduleRunnable)}.
      */
     String getDefaultCronExpression();
 

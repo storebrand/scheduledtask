@@ -15,8 +15,8 @@ import java.util.Optional;
 public interface ScheduledTaskService {
 
     /**
-     * Create a new schedule. Configure additional parameters on the {@link ScheduledTaskInitializer} and finally call
-     * {@link ScheduledTaskInitializer#start()} to actually initialize and start the new scheduled task.
+     * Create a new schedule. Configure additional parameters on the {@link ScheduledTaskBuilder} and finally call
+     * {@link ScheduledTaskBuilder#start()} to actually initialize and start the new scheduled task.
      *
      * @param name
      *         - Name of the schedule
@@ -24,26 +24,30 @@ public interface ScheduledTaskService {
      *         - When this schedule should run.
      * @param runnable
      *         - The runnable that this schedule should run.
-     * @return ScheduledTaskInitializer used to configure optional parameters, and start the scheduled task.
+     * @return ScheduledTaskBuilder used to configure optional parameters, and start the scheduled task.
      */
-    ScheduledTaskInitializer addScheduledTask(String name, String cronExpression, ScheduleRunnable runnable);
+    ScheduledTaskBuilder buildScheduledTask(String name, String cronExpression, ScheduleRunnable runnable);
+
+    default ScheduledTask addAndStartScheduledTask(String name, String cronExpression, ScheduleRunnable runnable) {
+        return buildScheduledTask(name, cronExpression, runnable).start();
+    }
 
     /**
      * Get a schedule with a specific name.
      */
-    ScheduledTask getSchedule(String name);
+    ScheduledTask getScheduledTask(String name);
 
     /**
      * Get a copy of all the schedules that are registered in the system.
      */
-    Map<String, ScheduledTask> getSchedules();
+    Map<String, ScheduledTask> getScheduledTasks();
 
     /**
      * Gets all schedules that are persisted in the current database. These might be different from what is in memory,
      * as there might be multiple services manipulating the schedules, and we should be able to read the current status
      * from the database.
      */
-    List<Schedule> getSchedulesFromRepository();
+    Map<String, Schedule> getSchedulesFromRepository();
 
     /**
      * Get information if any node currently has the master lock and if so what node currently has it. There is
@@ -203,9 +207,9 @@ public interface ScheduledTaskService {
      */
     interface Schedule {
         /**
-         * The name of the schedule
+         * The name of the schedule, which corresponds with the {@link ScheduledTask#getName()}.
          */
-        String getScheduleName();
+        String getName();
 
         /**
          * Informs if this schedule is currently active or not. IE is it currently set to execute the runnable part. It will
@@ -214,7 +218,7 @@ public interface ScheduledTaskService {
         boolean isActive();
 
         /**
-         * If set to true infroms that this should run now regardless of the schedule, also it should only run now once. It
+         * If set to true informs that this should run now regardless of the schedule, also it should only run now once. It
          * is used from the monitor when a user clicks the "run now" button, this will be written to the db where the master
          * node will pick it up and run it as soon as it checks the nextRun instant.
          */
@@ -231,7 +235,7 @@ public interface ScheduledTaskService {
         Instant getNextRun();
 
         /**
-         * When this schedule where last updated.
+         * When this schedule was last updated.
          */
         Instant getLastUpdated();
     }

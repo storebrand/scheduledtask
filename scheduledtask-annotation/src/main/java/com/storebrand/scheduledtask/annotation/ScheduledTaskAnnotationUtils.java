@@ -75,7 +75,7 @@ public class ScheduledTaskAnnotationUtils {
                     : annotation.name() + "#" + number++;
 
             log.info("Registering scheduled task annotated method [" + name + "]");
-            scheduledTaskService.addScheduledTask(name, annotation.cronExpression(), context -> {
+            scheduledTaskService.buildScheduledTask(name, annotation.cronExpression(), context -> {
                 try {
                     return (ScheduleStatus) method.invoke(instance, context);
                 }

@@ -6,12 +6,12 @@ import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunnable;
 
 /**
  * Initializer that is used to build a scheduled task. Get an implementation by calling
- * {@link ScheduledTaskService#addScheduledTask(String, String, ScheduleRunnable)}, and initialize the scheduled task by
- * filling in properties, and finally calling {@link ScheduledTaskInitializer#start()}.
+ * {@link ScheduledTaskService#buildScheduledTask(String, String, ScheduleRunnable)}, and initialize the scheduled task by
+ * filling in properties, and finally calling {@link ScheduledTaskBuilder#start()}.
  *
  * @author Kristian Hiim
  */
-public interface ScheduledTaskInitializer {
+public interface ScheduledTaskBuilder {
 
     int DEFAULT_MAX_EXPECTED_MINUTES_TO_RUN = 5;
     Criticality DEFAULT_CRITICALITY = Criticality.IMPORTANT;
@@ -25,7 +25,7 @@ public interface ScheduledTaskInitializer {
      *         the maximum minutes this task should run.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer maxExpectedMinutesToRun(int minutes);
+    ScheduledTaskBuilder maxExpectedMinutesToRun(int minutes);
 
     /**
      * Define how critical this task is. Default is {@link Criticality#IMPORTANT}.
@@ -34,7 +34,7 @@ public interface ScheduledTaskInitializer {
      *         the criticality level of this scheduled task.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer criticality(Criticality criticality);
+    ScheduledTaskBuilder criticality(Criticality criticality);
 
     /**
      * Defines if this task is able to recover by itself or not. Default is {@link Recovery#SELF_HEALING}.
@@ -43,7 +43,7 @@ public interface ScheduledTaskInitializer {
      *         the task is either self-healing or requires manual intervention if it fails.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer recovery(Recovery recovery);
+    ScheduledTaskBuilder recovery(Recovery recovery);
 
     /**
      * Define the number of days we should keep a record of runs for this schedule. After this records will be deleted.
@@ -53,7 +53,7 @@ public interface ScheduledTaskInitializer {
      *         after this number of days records of scheduled runs will be deleted.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer deleteRunsAfterDays(int days);
+    ScheduledTaskBuilder deleteRunsAfterDays(int days);
 
     /**
      * Define the number of days we should keep a record of successful runs for this schedule. This is not enabled by
@@ -64,7 +64,7 @@ public interface ScheduledTaskInitializer {
      *         after this number of days we should delete records of successful runs.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer deleteSuccessfulRunsAfterDays(int days);
+    ScheduledTaskBuilder deleteSuccessfulRunsAfterDays(int days);
 
     /**
      * Define the number of days we should keep a record of failed runs for this schedule. This is not enabled by
@@ -75,7 +75,7 @@ public interface ScheduledTaskInitializer {
      *         after this number of days we should delete records of failed runs.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer deleteFailedRunsAfterDays(int days);
+    ScheduledTaskBuilder deleteFailedRunsAfterDays(int days);
 
     /**
      * Only keep this many runs. Older records will be deleted if there are more. This rule is disabled by default.
@@ -84,7 +84,7 @@ public interface ScheduledTaskInitializer {
      *         the maximum number of runs we should keep records of.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer keepMaxRuns(int maxRuns);
+    ScheduledTaskBuilder keepMaxRuns(int maxRuns);
 
     /**
      * Only keep this many successful runs. Older records will be deleted if there are more. This rule is disabled by
@@ -95,7 +95,7 @@ public interface ScheduledTaskInitializer {
      *         the maximum number of successful runs we should keep records of.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer keepMaxSuccessfulRuns(int maxSuccessfulRuns);
+    ScheduledTaskBuilder keepMaxSuccessfulRuns(int maxSuccessfulRuns);
 
     /**
      * Only keep this many failed runs. Older records will be deleted if there are more. This rule is disabled by
@@ -106,7 +106,7 @@ public interface ScheduledTaskInitializer {
      *         the maximum number of failed runs we should keep records of.
      * @return the initializer that builds the {@link ScheduledTask}.
      */
-    ScheduledTaskInitializer keepMaxFailedRuns(int maxFailedRuns);
+    ScheduledTaskBuilder keepMaxFailedRuns(int maxFailedRuns);
 
 
     /**

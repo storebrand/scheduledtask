@@ -1,6 +1,5 @@
 package com.storebrand.scheduledtask.healthcheck;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -8,7 +7,7 @@ import com.storebrand.healthcheck.HealthCheckRegistry;
 import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTask.Criticality;
 import com.storebrand.scheduledtask.ScheduledTask.Recovery;
-import com.storebrand.scheduledtask.ScheduledTaskInitializer;
+import com.storebrand.scheduledtask.ScheduledTaskBuilder;
 import com.storebrand.scheduledtask.ScheduledTaskService;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -35,23 +34,23 @@ public class ScheduledTaskServiceHealthCheckWrapper implements ScheduledTaskServ
     }
 
     @Override
-    public ScheduledTaskInitializer addScheduledTask(String name, String cronExpression, ScheduleRunnable runnable) {
-        return new ScheduledTaskInitializerHealthCheckWrapper(
-                _scheduledTaskService.addScheduledTask(name, cronExpression, runnable));
+    public ScheduledTaskBuilder buildScheduledTask(String name, String cronExpression, ScheduleRunnable runnable) {
+        return new ScheduledTaskBuilderHealthCheckWrapper(
+                _scheduledTaskService.buildScheduledTask(name, cronExpression, runnable));
     }
 
     @Override
-    public ScheduledTask getSchedule(String name) {
-        return _scheduledTaskService.getSchedule(name);
+    public ScheduledTask getScheduledTask(String name) {
+        return _scheduledTaskService.getScheduledTask(name);
     }
 
     @Override
-    public Map<String, ScheduledTask> getSchedules() {
-        return _scheduledTaskService.getSchedules();
+    public Map<String, ScheduledTask> getScheduledTasks() {
+        return _scheduledTaskService.getScheduledTasks();
     }
 
     @Override
-    public List<Schedule> getSchedulesFromRepository() {
+    public Map<String, Schedule> getSchedulesFromRepository() {
         return _scheduledTaskService.getSchedulesFromRepository();
     }
 
@@ -72,64 +71,64 @@ public class ScheduledTaskServiceHealthCheckWrapper implements ScheduledTaskServ
 
     @SuppressFBWarnings(value = "RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT",
             justification = "This is intentional, as we want to return the wrapper, not the wrapped initializer.")
-    class ScheduledTaskInitializerHealthCheckWrapper implements ScheduledTaskInitializer {
+    class ScheduledTaskBuilderHealthCheckWrapper implements ScheduledTaskBuilder {
 
-        private final ScheduledTaskInitializer _initializer;
+        private final ScheduledTaskBuilder _initializer;
 
-        ScheduledTaskInitializerHealthCheckWrapper(ScheduledTaskInitializer initializer) {
+        ScheduledTaskBuilderHealthCheckWrapper(ScheduledTaskBuilder initializer) {
             _initializer = initializer;
         }
 
         @Override
-        public ScheduledTaskInitializer maxExpectedMinutesToRun(int minutes) {
+        public ScheduledTaskBuilder maxExpectedMinutesToRun(int minutes) {
             _initializer.maxExpectedMinutesToRun(minutes);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer criticality(Criticality criticality) {
+        public ScheduledTaskBuilder criticality(Criticality criticality) {
             _initializer.criticality(criticality);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer recovery(Recovery recovery) {
+        public ScheduledTaskBuilder recovery(Recovery recovery) {
             _initializer.recovery(recovery);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer deleteRunsAfterDays(int days) {
+        public ScheduledTaskBuilder deleteRunsAfterDays(int days) {
             _initializer.deleteRunsAfterDays(days);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer deleteSuccessfulRunsAfterDays(int days) {
+        public ScheduledTaskBuilder deleteSuccessfulRunsAfterDays(int days) {
             _initializer.deleteSuccessfulRunsAfterDays(days);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer deleteFailedRunsAfterDays(int days) {
+        public ScheduledTaskBuilder deleteFailedRunsAfterDays(int days) {
             _initializer.deleteFailedRunsAfterDays(days);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer keepMaxRuns(int maxRuns) {
+        public ScheduledTaskBuilder keepMaxRuns(int maxRuns) {
             _initializer.keepMaxRuns(maxRuns);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer keepMaxSuccessfulRuns(int maxSuccessfulRuns) {
+        public ScheduledTaskBuilder keepMaxSuccessfulRuns(int maxSuccessfulRuns) {
             _initializer.keepMaxSuccessfulRuns(maxSuccessfulRuns);
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer keepMaxFailedRuns(int maxFailedRuns) {
+        public ScheduledTaskBuilder keepMaxFailedRuns(int maxFailedRuns) {
             _initializer.keepMaxFailedRuns(maxFailedRuns);
             return this;
         }

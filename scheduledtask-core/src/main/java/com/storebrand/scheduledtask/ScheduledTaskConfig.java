@@ -144,7 +144,7 @@ public class ScheduledTaskConfig {
             private int _deleteSuccessfulRunsAfterDays;
             private int _deleteFailedRunsAfterDays;
 
-            private int _deleteRunsAfterDays = ScheduledTaskInitializer.DEFAULT_DELETE_RUNS_AFTER_DAYS; // Default one year
+            private int _deleteRunsAfterDays = ScheduledTaskBuilder.DEFAULT_DELETE_RUNS_AFTER_DAYS; // Default one year
 
             public Builder keepMaxSuccessfulRuns(int keepMaxSuccessfulRuns) {
                 _keepMaxSuccessfulRuns = keepMaxSuccessfulRuns;
