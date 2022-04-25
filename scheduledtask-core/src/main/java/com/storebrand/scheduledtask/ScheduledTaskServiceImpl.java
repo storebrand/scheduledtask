@@ -6,10 +6,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +40,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private final Clock _clock;
     private final MasterLockRepository _masterLockRepository;
     private final ScheduledTaskRepository _scheduledTaskRepository;
+    private final List<ScheduledTaskListener> _scheduledTaskListeners = new CopyOnWriteArrayList<>();
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public ScheduledTaskServiceImpl(ScheduledTaskRepository scheduledTaskRepository,
@@ -61,6 +64,15 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
         log.info("Shutting down the masterLock thread");
         _masterLockKeeper.stop();
+    }
+
+    @Override
+    public void addListener(ScheduledTaskListener listener) {
+        _scheduledTaskListeners.add(listener);
+        // Notify listener about all scheduled tasks that have already been created before we added the listener.
+        for (ScheduledTask scheduledTask : _schedules.values()) {
+            listener.onScheduledTaskCreated(scheduledTask);
+        }
     }
 
     @Override
@@ -106,6 +118,12 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             log.info("Awakening thread '" + entry.getKey() + "'");
             entry.getValue().notifyThread();
         });
+    }
+
+    void notifyScheduledTaskCreated(ScheduledTask scheduledTask) {
+        for (ScheduledTaskListener listener : _scheduledTaskListeners) {
+            listener.onScheduledTaskCreated(scheduledTask);
+        }
     }
 
     // ===== MasterLock and Schedule ===================================================================================
@@ -343,7 +361,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
             // Ensure schedule exists in database. This will only add the schedule if it does not exist.
             _scheduledTaskRepository.createSchedule(_scheduleName, nextRunInstant);
 
-            return _schedules.compute(_scheduleName, (key, value) -> {
+            ScheduledTask scheduledTask = _schedules.compute(_scheduleName, (key, value) -> {
                 // ?: Do we already have a schedule with this name?
                 if (value != null) {
                     // -> Yes, then we should throw so we don't create an additional runner for this schedule.
@@ -363,6 +381,8 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
                 return new ScheduledTaskRunner(config, _runnable,
                         _masterLockKeeper, _scheduledTaskRepository, _clock);
             });
+            notifyScheduledTaskCreated(scheduledTask);
+            return scheduledTask;
         }
     }
 }

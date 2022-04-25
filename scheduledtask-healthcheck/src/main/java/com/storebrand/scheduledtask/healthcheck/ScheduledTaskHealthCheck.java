@@ -26,6 +26,7 @@ import com.storebrand.scheduledtask.ScheduledTaskService;
 import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTask;
+import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTaskListener;
 import com.storebrand.scheduledtask.ScheduledTaskService.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -33,7 +34,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 /**
  * Health checks for scheduled tasks, provided by the Storebrand HealthCheck library.
  */
-public class ScheduledTaskHealthCheck {
+public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
 
     private static final Map<Criticality, Set<Axis>> CRITICALITY_AXES;
     static {
@@ -51,32 +52,24 @@ public class ScheduledTaskHealthCheck {
 
     private final Object _lockObject = new Object();
 
+    private final ScheduledTaskService _scheduledTaskService;
     private final Clock _clock;
 
-    private volatile ScheduledTaskService _scheduledTaskService;
     private volatile CheckSpecification _checkSpecification;
 
-    public ScheduledTaskHealthCheck(Clock clock) {
-        _clock = clock;
-    }
-
-    /**
-     * Method for initializing health checks for scheduled tasks.
-     */
     @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public void initialize(ScheduledTaskService scheduledTaskService, HealthCheckRegistry registry) {
-        synchronized (_lockObject) {
-            if (_scheduledTaskService != null) {
-                // Already initialized - do nothing
-                return;
-            }
-            _scheduledTaskService = scheduledTaskService;
-        }
-        registry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks master lock"),
-                this::masterLockHealthCheck);
+    public ScheduledTaskHealthCheck(ScheduledTaskService scheduledTaskService, HealthCheckRegistry healthCheckRegistry,
+            Clock clock) {
+        _scheduledTaskService = scheduledTaskService;
+        _clock = clock != null ? clock : Clock.systemDefaultZone();
 
-        registry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks"),
-                this::scheduledTaskHealthCheck);
+        if (scheduledTaskService != null && healthCheckRegistry != null) {
+            healthCheckRegistry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks master lock"),
+                    this::masterLockHealthCheck);
+            healthCheckRegistry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks"),
+                    this::scheduledTaskHealthCheck);
+            _scheduledTaskService.addListener(this);
+        }
     }
 
     /**
@@ -229,5 +222,10 @@ public class ScheduledTaskHealthCheck {
             return;
         }
         scheduledTaskHealthCheck(checkSpecification);
+    }
+
+    @Override
+    public void onScheduledTaskCreated(ScheduledTask scheduledTask) {
+        reSpecifyHealthCheck();
     }
 }
