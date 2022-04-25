@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
@@ -79,7 +80,7 @@ public interface ScheduledTaskRepository {
     /**
      * Get all schedules in the database
      */
-    List<Schedule> getSchedules();
+    Map<String, Schedule> getSchedules();
 
     /**
      * Get the schedule with a specific name.

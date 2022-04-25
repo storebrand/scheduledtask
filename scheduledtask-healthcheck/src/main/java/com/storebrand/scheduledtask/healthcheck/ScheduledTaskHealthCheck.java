@@ -1,6 +1,5 @@
 package com.storebrand.scheduledtask.healthcheck;
 
-import static java.util.stream.Collectors.toMap;
 import static java.util.stream.Collectors.toSet;
 
 import java.time.Clock;
@@ -135,8 +134,7 @@ public class ScheduledTaskHealthCheck {
             }
 
             spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
-                Map<String, Schedule> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository().stream()
-                        .collect(toMap(Schedule::getScheduleName, schedule -> schedule));
+                Map<String, Schedule> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository();
                 TableBuilder tableBuilder = new TableBuilder(
                         "Schedule",
                         "Active",
@@ -145,7 +143,7 @@ public class ScheduledTaskHealthCheck {
                         "Overdue",
                         "Status");
                 boolean failed = false;
-                for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
+                for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getScheduledTasks().entrySet()) {
                     boolean scheduleFailed;
                     // Is this schedule active?
                     boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
@@ -181,7 +179,7 @@ public class ScheduledTaskHealthCheck {
             // Render out based on the set Healthlevel. We check the lastRun to see if this failed or if the schedule is
             // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
             // set the defined getHealthCheckLevel() for this schedule.
-            for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getSchedules().entrySet()) {
+            for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getScheduledTasks().entrySet()) {
                 Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getCriticality()));
                 if (entry.getValue().getRecovery() == Recovery.MANUAL_INTERVENTION) {
                     axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);

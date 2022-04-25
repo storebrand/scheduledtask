@@ -80,7 +80,7 @@ public class ScheduledTaskSpringTest {
 
             // At this point we should have a ScheduledTaskService with a registered scheduled task
             ScheduledTaskService scheduledTaskService = context.getBean(ScheduledTaskService.class);
-            assertNotNull(scheduledTaskService.getSchedule(SpringComponentWithScheduledTask.SCHEDULED_TASK_NAME));
+            assertNotNull(scheduledTaskService.getScheduledTask(SpringComponentWithScheduledTask.SCHEDULED_TASK_NAME));
         }
     }
 

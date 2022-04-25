@@ -1,6 +1,7 @@
 package com.storebrand.scheduledtask.db.sql;
 
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 
 import java.sql.Connection;
 import java.sql.JDBCType;
@@ -14,6 +15,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.sql.DataSource;
@@ -160,7 +162,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public List<Schedule> getSchedules() {
+    public Map<String, Schedule> getSchedules() {
         String sql = "SELECT * FROM " + SCHEDULE_TASK_TABLE;
 
         try (Connection sqlConnection = _dataSource.getConnection();
@@ -180,7 +182,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             }
             return schedules.stream()
                     .map(ScheduledTaskSqlRepository::fromDbo)
-                    .collect(toList());
+                    .collect(toMap(Schedule::getName, s -> s));
         }
         catch (SQLException e) {
             throw new RuntimeException(e);
@@ -568,7 +570,6 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, State.FAILED);
             }
 
-            // TODO: Keep only n records
             // ?: Have we defined max runs to keep?
             if (retentionPolicy.getKeepMaxRuns() > 0) {
                 // -> Yes, then should only keep this many
@@ -999,7 +1000,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         }
 
         @Override
-        public String getScheduleName() {
+        public String getName() {
             return scheduleName;
         }
 

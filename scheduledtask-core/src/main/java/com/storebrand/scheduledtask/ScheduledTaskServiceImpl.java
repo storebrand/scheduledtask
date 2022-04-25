@@ -6,7 +6,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -65,13 +64,13 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     }
 
     @Override
-    public ScheduledTaskInitializer addScheduledTask(String name, String cronExpression,
+    public ScheduledTaskBuilder buildScheduledTask(String name, String cronExpression,
             ScheduleRunnable runnable) {
-        return new ScheduledTaskRunnerInitializer(name, cronExpression, runnable);
+        return new ScheduledTaskRunnerBuilder(name, cronExpression, runnable);
     }
 
     @Override
-    public ScheduledTask getSchedule(String name) {
+    public ScheduledTask getScheduledTask(String name) {
         if (name == null) {
             return null;
         }
@@ -79,12 +78,12 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     }
 
     @Override
-    public Map<String, ScheduledTask> getSchedules() {
+    public Map<String, ScheduledTask> getScheduledTasks() {
         return _schedules.entrySet().stream().collect(toMap(Entry::getKey, Entry::getValue));
     }
 
     @Override
-    public List<Schedule> getSchedulesFromRepository() {
+    public Map<String, Schedule> getSchedulesFromRepository() {
         return _scheduledTaskRepository.getSchedules();
     }
 
@@ -256,7 +255,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
 
     // ===== Helper class ==========================================================================================
 
-    private class ScheduledTaskRunnerInitializer implements ScheduledTaskInitializer {
+    private class ScheduledTaskRunnerBuilder implements ScheduledTaskBuilder {
 
         private final String _scheduleName;
         private final String _cronExpression;
@@ -271,7 +270,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         private int _keepMaxSuccessfulRuns;
         private int _keepMaxFailedRuns;
 
-        private ScheduledTaskRunnerInitializer(String scheduleName, String cronExpression,
+        private ScheduledTaskRunnerBuilder(String scheduleName, String cronExpression,
                 ScheduleRunnable runnable) {
             _scheduleName = scheduleName;
             _cronExpression = cronExpression;
@@ -279,55 +278,55 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         }
 
         @Override
-        public ScheduledTaskInitializer maxExpectedMinutesToRun(int minutes) {
+        public ScheduledTaskBuilder maxExpectedMinutesToRun(int minutes) {
             _maxExpectedMinutesToRun = minutes;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer criticality(Criticality criticality) {
+        public ScheduledTaskBuilder criticality(Criticality criticality) {
             _criticality = criticality;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer recovery(Recovery recovery) {
+        public ScheduledTaskBuilder recovery(Recovery recovery) {
             _recovery = recovery;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer deleteRunsAfterDays(int days) {
+        public ScheduledTaskBuilder deleteRunsAfterDays(int days) {
             _deleteRunsAfter = days;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer deleteSuccessfulRunsAfterDays(int days) {
+        public ScheduledTaskBuilder deleteSuccessfulRunsAfterDays(int days) {
             _deleteSuccessfulRunsAfter = days;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer deleteFailedRunsAfterDays(int days) {
+        public ScheduledTaskBuilder deleteFailedRunsAfterDays(int days) {
             _deleteFailedRunsAfterDays = days;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer keepMaxRuns(int maxRuns) {
+        public ScheduledTaskBuilder keepMaxRuns(int maxRuns) {
             _keepMaxRuns = maxRuns;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer keepMaxSuccessfulRuns(int maxSuccessfulRuns) {
+        public ScheduledTaskBuilder keepMaxSuccessfulRuns(int maxSuccessfulRuns) {
             _keepMaxSuccessfulRuns = maxSuccessfulRuns;
             return this;
         }
 
         @Override
-        public ScheduledTaskInitializer keepMaxFailedRuns(int maxFailedRuns) {
+        public ScheduledTaskBuilder keepMaxFailedRuns(int maxFailedRuns) {
             _keepMaxFailedRuns = maxFailedRuns;
             return this;
         }

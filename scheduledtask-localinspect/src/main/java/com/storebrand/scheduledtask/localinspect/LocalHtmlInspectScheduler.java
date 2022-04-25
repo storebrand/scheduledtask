@@ -257,7 +257,7 @@ public class LocalHtmlInspectScheduler {
      */
     public void createSchedulesOverview(Writer out) throws IOException {
         // Get all the schedules
-        List<MonitorScheduleDto> bindingsDtoMap = _scheduledTaskService.getSchedules().values().stream()
+        List<MonitorScheduleDto> bindingsDtoMap = _scheduledTaskService.getScheduledTasks().values().stream()
                 .map(scheduledTask -> new MonitorScheduleDto(scheduledTask))
                 .collect(toList());
 
@@ -417,7 +417,7 @@ public class LocalHtmlInspectScheduler {
      */
     public void createScheduleRunsTable(Writer out, LocalDateTime fromDate, LocalDateTime toDate,
             String scheduleName, String includeLogsForInstanceId) throws IOException {
-        ScheduledTask schedule = _scheduledTaskService.getSchedule(scheduleName);
+        ScheduledTask schedule = _scheduledTaskService.getScheduledTask(scheduleName);
 
         // ?: Did we get a schedule?
         if (schedule == null) {
@@ -599,7 +599,7 @@ public class LocalHtmlInspectScheduler {
      * disable the execution of the supplied runnable for the schedule.
      */
     public void toggleActive(String scheduleName) {
-        _scheduledTaskService.getSchedules().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+        _scheduledTaskService.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             // Toggle the state
             if (scheduled.isActive()) {
                 scheduled.stop();
@@ -617,7 +617,7 @@ public class LocalHtmlInspectScheduler {
      * via the db and the master node check the db every 2 min.
      */
     public void triggerSchedule(String scheduleName) {
-        _scheduledTaskService.getSchedules().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+        _scheduledTaskService.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             scheduled.runNow();
             return scheduled;
         });
@@ -640,7 +640,7 @@ public class LocalHtmlInspectScheduler {
             // cronExpressions and use the default one.
             newCron = null;
         }
-        _scheduledTaskService.getSchedules().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+        _scheduledTaskService.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             scheduled.setOverrideExpression(newCron);
             return scheduled;
         });
@@ -660,7 +660,7 @@ public class LocalHtmlInspectScheduler {
         private final boolean running;
 
         MonitorScheduleDto(ScheduledTask scheduled) {
-            this.schedulerName = scheduled.getScheduleName();
+            this.schedulerName = scheduled.getName();
             this.active = scheduled.isActive();
             this.lastRunStarted = scheduled.getLastRunStarted();
             this.lastRunComplete = scheduled.getLastRunCompleted();

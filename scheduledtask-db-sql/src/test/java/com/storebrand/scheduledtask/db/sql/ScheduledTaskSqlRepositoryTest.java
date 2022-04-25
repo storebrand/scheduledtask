@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.sql.DataSource;
@@ -225,15 +226,13 @@ public class ScheduledTaskSqlRepositoryTest {
         schedulerRep.createSchedule("test-schedule-2", null, initialNextRun);
 
         // :: Act
-        List<Schedule> schedules = schedulerRep.getSchedules();
+        Map<String, Schedule> schedules = schedulerRep.getSchedules();
 
         // :: Assert
         assertEquals(2, schedules.size());
-        Optional<Schedule> schedule1 = schedules.stream()
-                .filter(scheduleDbo -> "test-schedule-1".equalsIgnoreCase(scheduleDbo.getScheduleName()))
-                .findAny();
-        assertTrue(schedule1.isPresent());
-        assertEquals(now.atZone(ZoneId.systemDefault()).toInstant(), schedule1.get().getLastUpdated());
+        Schedule schedule1 = schedules.get("test-schedule-1");
+        assertNotNull(schedule1);
+        assertEquals(now.atZone(ZoneId.systemDefault()).toInstant(), schedule1.getLastUpdated());
     }
 
     // ==== Scheduled runs tests =================================================================
