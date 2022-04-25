@@ -38,7 +38,7 @@ import com.storebrand.scheduledtask.spring.EnableScheduledTasks.ScheduledTaskBea
 public @interface EnableScheduledTasks {
 
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    class ScheduledTaskBeanRegistration implements ImportBeanDefinitionRegistrar {
+    public class ScheduledTaskBeanRegistration implements ImportBeanDefinitionRegistrar {
         private static final Logger log = LoggerFactory.getLogger(ScheduledTaskBeanRegistration.class);
 
         @Override

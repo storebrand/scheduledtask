@@ -50,17 +50,17 @@ public interface ScheduledTaskService {
     Map<String, Schedule> getSchedulesFromRepository();
 
     /**
-     * Get information if any node currently has the master lock and if so what node currently has it. There is
-     * also a chance that the lock is not set to anyone and this return who had it last, to figure out if this
-     * returns an old lock you need to check {@link MasterLock#getLockLastUpdatedTime()} by the following rules:
+     * Get information if any node currently has the master lock and if so what node currently has it. There is also a
+     * chance that the lock is not set to anyone and this return who had it last, to figure out if this returns an old
+     * lock you need to check {@link MasterLock#getLockLastUpdatedTime()} by the following rules:
      * <ol>
-     *     <li>If the lock {@link MasterLock#getLockLastUpdatedTime()} is <5 min {@link MasterLock#getNodeName()}}
+     *     <li>If the lock {@link MasterLock#getLockLastUpdatedTime()} is &lt;5 min {@link MasterLock#getNodeName()}}
      *     currently has the lock. The lock kan be kept by the node withing this timespan, this will cause the
      *     {@link MasterLock#getLockLastUpdatedTime()} of the lock to update giving the node 5 more minutes
      *     to keep the lock</li>
-     *     <li>If the lock {@link MasterLock#getLockLastUpdatedTime()} is >5 min and under <10 min no node currently
+     *     <li>If the lock {@link MasterLock#getLockLastUpdatedTime()} is &gt;5 min and under &lt;10 min no node currently
      *     has the lock. This is a limbo state where no node neither has it or can claim it.</li>
-     *     <li>If the lock {@link MasterLock#getLockLastUpdatedTime()} is >10 min old then it is up for grabs by
+     *     <li>If the lock {@link MasterLock#getLockLastUpdatedTime()} is &gt;10 min old then it is up for grabs by
      *     all nodes, the first node to claim it will then have the lock, it will try to keep the lock by
      *     updating the {@link MasterLock#getLockLastUpdatedTime()}</li>
      * <p>
@@ -77,6 +77,12 @@ public interface ScheduledTaskService {
      * Stops and closes all the schedules and the masterLocker. Used during shutdown of the running service.
      */
     void close();
+
+    /**
+     * Add a listener that will be notified when scheduled tasks are created. Can potentially be extended in the future
+     * to cover more events.
+     */
+    void addListener(ScheduledTaskListener listener);
 
     /**
      * Represents the current state of a task.
@@ -147,20 +153,19 @@ public interface ScheduledTaskService {
         LocalDateTime getStatusTime();
 
         /**
-         * Get all {@link LogEntry}.
-         * This will be retrieved from the database since the logs are not kept in memory.
+         * Get all {@link LogEntry}. This will be retrieved from the database since the logs are not kept in memory.
          */
         List<LogEntry> getLogEntries();
 
         /**
-         * Add a log message to this run.
-         * Can be called multiple times as long as the {@link #failed(String)} or {@link #done(String)} is not set.
+         * Add a log message to this run. Can be called multiple times as long as the {@link #failed(String)} or
+         * {@link #done(String)} is not set.
          */
         void log(String msg);
 
         /**
-         * Add a log message with a throwable to this run.
-         * Can be called multiple times as long as the {@link #failed(String)} or {@link #done(String)} is not set.
+         * Add a log message with a throwable to this run. Can be called multiple times as long as the
+         * {@link #failed(String)} or {@link #done(String)} is not set.
          */
         void log(String msg, Throwable throwable);
 
@@ -212,15 +217,15 @@ public interface ScheduledTaskService {
         String getName();
 
         /**
-         * Informs if this schedule is currently active or not. IE is it currently set to execute the runnable part. It will
-         * still "do the loop schedule" except it will skip running the supplied runnable if this is set to false.
+         * Informs if this schedule is currently active or not. IE is it currently set to execute the runnable part. It
+         * will still "do the loop schedule" except it will skip running the supplied runnable if this is set to false.
          */
         boolean isActive();
 
         /**
-         * If set to true informs that this should run now regardless of the schedule, also it should only run now once. It
-         * is used from the monitor when a user clicks the "run now" button, this will be written to the db where the master
-         * node will pick it up and run it as soon as it checks the nextRun instant.
+         * If set to true informs that this should run now regardless of the schedule, also it should only run now once.
+         * It is used from the monitor when a user clicks the "run now" button, this will be written to the db where the
+         * master node will pick it up and run it as soon as it checks the nextRun instant.
          */
         boolean isRunOnce();
 
@@ -278,9 +283,20 @@ public interface ScheduledTaskService {
         Instant getLockLastUpdatedTime();
 
         /**
-         * Check if this lock is still valid. If it is over 5 min old it is invalid meaning this host where the one to have
-         * it last. The lock can't be re-claimed before it has passed 10 min since last update.
+         * Check if this lock is still valid. If it is over 5 min old it is invalid meaning this host where the one to
+         * have it last. The lock can't be re-claimed before it has passed 10 min since last update.
          */
         boolean isValid(Instant now);
+    }
+
+    /**
+     * Listener that can be used to detect events regarding scheduled tasks. Only supports notifying that a {@link
+     * ScheduledTask} has been created at the moment.
+     */
+    interface ScheduledTaskListener {
+        /**
+         * A scheduled task has been created.
+         */
+        void onScheduledTaskCreated(ScheduledTask scheduledTask);
     }
 }

@@ -14,7 +14,7 @@ import java.util.stream.Stream;
  * @author Ståle Undheim, 2020.10.01 <staale.undheim@storebrand.no>
  * @author Dag Bertelsen, 2021.04 <dag.lennart.bertelsen@storebrand.no>
  */
-public class TableBuilder {
+class TableBuilder {
 
     private final String[] _headings;
     private final List<Object[]> _rows = new ArrayList<>();
@@ -28,7 +28,7 @@ public class TableBuilder {
      * @param headings
      *         column headings for the table
      */
-    public TableBuilder(String... headings) {
+    TableBuilder(String... headings) {
         _headings = headings;
     }
 
@@ -41,7 +41,7 @@ public class TableBuilder {
      * @param values row values to add to the table
      * @return this builder, with the values added.
      */
-    public TableBuilder addRow(Object... values) {
+    TableBuilder addRow(Object... values) {
         if (values.length != _headings.length) {
             throw new IllegalArgumentException("Expected [" + _headings.length + "] values, "
                     + "but got [" + values.length + "] values, can not add row");
