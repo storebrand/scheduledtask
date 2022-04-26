@@ -20,14 +20,14 @@ import com.storebrand.healthcheck.HealthCheckMetadata;
 import com.storebrand.healthcheck.HealthCheckRegistry;
 import com.storebrand.healthcheck.Responsible;
 import com.storebrand.scheduledtask.ScheduledTask.Recovery;
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTask.Criticality;
-import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTask;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduledTaskListener;
-import com.storebrand.scheduledtask.ScheduledTaskService.State;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduledTaskListener;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -52,23 +52,23 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
 
     private final Object _lockObject = new Object();
 
-    private final ScheduledTaskService _scheduledTaskService;
+    private final ScheduledTaskRegistry _scheduledTaskRegistry;
     private final Clock _clock;
 
     private volatile CheckSpecification _checkSpecification;
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public ScheduledTaskHealthCheck(ScheduledTaskService scheduledTaskService, HealthCheckRegistry healthCheckRegistry,
+    public ScheduledTaskHealthCheck(ScheduledTaskRegistry scheduledTaskRegistry, HealthCheckRegistry healthCheckRegistry,
             Clock clock) {
-        _scheduledTaskService = scheduledTaskService;
+        _scheduledTaskRegistry = scheduledTaskRegistry;
         _clock = clock != null ? clock : Clock.systemDefaultZone();
 
-        if (scheduledTaskService != null && healthCheckRegistry != null) {
+        if (scheduledTaskRegistry != null && healthCheckRegistry != null) {
             healthCheckRegistry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks master lock"),
                     this::masterLockHealthCheck);
             healthCheckRegistry.registerHealthCheck(HealthCheckMetadata.create("Scheduled tasks"),
                     this::scheduledTaskHealthCheck);
-            _scheduledTaskService.addListener(this);
+            _scheduledTaskRegistry.addListener(this);
         }
     }
 
@@ -76,10 +76,10 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
      * Health check specification for a check that checks what service has the lock, or if any has it at all.
      */
     public void masterLockHealthCheck(CheckSpecification spec) {
-        spec.dynamicText(context -> "Running node has the master lock: " + (_scheduledTaskService.hasMasterLock() ? "yes" : "no"));
+        spec.dynamicText(context -> "Running node has the master lock: " + (_scheduledTaskRegistry.hasMasterLock() ? "yes" : "no"));
         // :: Get the status from the db on who has the lock
         spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_PARTIAL, context -> {
-            Optional<MasterLock> masterLock = _scheduledTaskService.getMasterLock();
+            Optional<MasterLock> masterLock = _scheduledTaskRegistry.getMasterLock();
             // ?: Is the lock yet unclaimed?
             if (!masterLock.isPresent()) {
                 // -> Yes, nobody has the lock. This means this node is just starting and have not managed
@@ -127,7 +127,7 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
             }
 
             spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
-                Map<String, Schedule> allSchedulesFromDb = _scheduledTaskService.getSchedulesFromRepository();
+                Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
                 TableBuilder tableBuilder = new TableBuilder(
                         "Schedule",
                         "Active",
@@ -136,7 +136,7 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
                         "Overdue",
                         "Status");
                 boolean failed = false;
-                for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getScheduledTasks().entrySet()) {
+                for (Entry<String, ScheduledTask> entry : _scheduledTaskRegistry.getScheduledTasks().entrySet()) {
                     boolean scheduleFailed;
                     // Is this schedule active?
                     boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
@@ -172,7 +172,7 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
             // Render out based on the set Healthlevel. We check the lastRun to see if this failed or if the schedule is
             // overdue times 10. If the schedule is overdue or last run failed we render ONE line for each error and
             // set the defined getHealthCheckLevel() for this schedule.
-            for (Entry<String, ScheduledTask> entry : _scheduledTaskService.getScheduledTasks().entrySet()) {
+            for (Entry<String, ScheduledTask> entry : _scheduledTaskRegistry.getScheduledTasks().entrySet()) {
                 Set<Axis> axes = new TreeSet<>(CRITICALITY_AXES.get(entry.getValue().getCriticality()));
                 if (entry.getValue().getRecovery() == Recovery.MANUAL_INTERVENTION) {
                     axes.add(Axis.MANUAL_INTERVENTION_REQUIRED);

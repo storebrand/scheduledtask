@@ -14,18 +14,18 @@ import org.springframework.beans.factory.config.AbstractFactoryBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
-import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 import com.storebrand.scheduledtask.db.sql.MasterLockSqlRepository;
 import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository;
 
 /**
- * Factory bean that will create an implementation of {@link ScheduledTaskService}. This will also handle shutting down
+ * Factory bean that will create an implementation of {@link ScheduledTaskRegistry}. This will also handle shutting down
  * the service when the application context is shutting down.
  * <p>
- * {@link ScheduledTaskServiceImpl} requires both a {@link ScheduledTaskRepository} and a {@link MasterLockRepository}.
+ * {@link ScheduledTaskRegistryImpl} requires both a {@link ScheduledTaskRepository} and a {@link MasterLockRepository}.
  * The factory will try to inject these as optional dependencies. If they are found it will use them.
  * <p>
  * If there are no repositories present the factory will look for a {@link DataSource} in the Spring context, and use
@@ -39,9 +39,9 @@ import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository;
  *
  * @author Kristian Hiim
  */
-public class ScheduledTaskServiceFactory extends AbstractFactoryBean<ScheduledTaskService>
+public class ScheduledTaskRegistryFactory extends AbstractFactoryBean<ScheduledTaskRegistry>
         implements ApplicationContextAware {
-    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskServiceFactory.class);
+    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskRegistryFactory.class);
 
     @Inject
     private Optional<MasterLockRepository> _masterLockRepository;
@@ -57,7 +57,7 @@ public class ScheduledTaskServiceFactory extends AbstractFactoryBean<ScheduledTa
 
     private ApplicationContext _applicationContext;
 
-    public ScheduledTaskServiceFactory() {
+    public ScheduledTaskRegistryFactory() {
         setSingleton(true);
     }
 
@@ -68,7 +68,7 @@ public class ScheduledTaskServiceFactory extends AbstractFactoryBean<ScheduledTa
 
     @Override
     public Class<?> getObjectType() {
-        return ScheduledTaskServiceImpl.class;
+        return ScheduledTaskRegistryImpl.class;
     }
 
     protected Clock getClock() {
@@ -76,7 +76,7 @@ public class ScheduledTaskServiceFactory extends AbstractFactoryBean<ScheduledTa
     }
 
     @Override
-    protected ScheduledTaskService createInstance() {
+    protected ScheduledTaskRegistry createInstance() {
         // Use Clock from Spring context if it is present, or use system default zone.
         final Clock clock = getClock();
 
@@ -104,11 +104,11 @@ public class ScheduledTaskServiceFactory extends AbstractFactoryBean<ScheduledTa
                     clock);
         });
 
-        return new ScheduledTaskServiceImpl(scheduledTaskRepository, masterLockRepository, clock);
+        return new ScheduledTaskRegistryImpl(scheduledTaskRepository, masterLockRepository, clock);
     }
 
     @Override
-    protected void destroyInstance(ScheduledTaskService instance) {
+    protected void destroyInstance(ScheduledTaskRegistry instance) {
         if (instance != null) {
             instance.close();
         }

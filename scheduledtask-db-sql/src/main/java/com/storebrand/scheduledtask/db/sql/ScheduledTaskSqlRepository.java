@@ -23,19 +23,19 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
-import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
-import com.storebrand.scheduledtask.ScheduledTaskService.State;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
+import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
- * Handles storing and updating of the {@link ScheduledTaskServiceImpl} schedules and run logs.
+ * Handles storing and updating of the {@link ScheduledTaskRegistryImpl} schedules and run logs.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.02
  * @author Kristian Hiim
@@ -236,7 +236,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             pStmt.setString(1, instanceId);
             pStmt.setString(2, scheduleName);
-            pStmt.setString(3, ScheduledTaskService.State.STARTED.toString());
+            pStmt.setString(3, ScheduledTaskRegistry.State.STARTED.toString());
             pStmt.setString(4, statusMsg);
             pStmt.setTimestamp(5, Timestamp.from(runStart));
             pStmt.setTimestamp(6, Timestamp.from(_clock.instant()));
@@ -256,7 +256,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 + " SET status = ?, status_msg = ?, status_stacktrace = ?, status_time = ? "
                 + " WHERE instance_id = ?";
 
-        if (state.equals(ScheduledTaskService.State.STARTED)) {
+        if (state.equals(ScheduledTaskRegistry.State.STARTED)) {
             throw new IllegalArgumentException("The state STARTED can only be set during the addScheduleRun");
         }
 
@@ -915,7 +915,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         }
 
         public State getStatus() {
-            return ScheduledTaskService.State.valueOf(status);
+            return ScheduledTaskRegistry.State.valueOf(status);
         }
 
         public String getStatusMsg() {

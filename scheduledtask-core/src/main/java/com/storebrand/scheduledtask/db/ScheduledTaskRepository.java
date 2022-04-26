@@ -7,15 +7,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
-import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
-import com.storebrand.scheduledtask.ScheduledTaskService.State;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
+import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 
 /**
  * Interface for creating and storing scheduled tasks and run details in the database. An implementation is required for
- * scheduled tasks to work. This is meant for internal use inside {@link ScheduledTaskServiceImpl}, and should not be
+ * scheduled tasks to work. This is meant for internal use inside {@link ScheduledTaskRegistryImpl}, and should not be
  * used outside this package, except for providing implementations.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.02

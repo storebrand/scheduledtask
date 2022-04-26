@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleStatus;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleStatus;
 
 public class ScheduledTaskAnnotationUtilsTest {
 

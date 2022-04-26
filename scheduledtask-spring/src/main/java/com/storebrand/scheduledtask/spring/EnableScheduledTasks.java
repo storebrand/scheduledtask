@@ -16,11 +16,12 @@ import org.springframework.context.annotation.ImportBeanDefinitionRegistrar;
 import org.springframework.context.annotation.Role;
 import org.springframework.core.type.AnnotationMetadata;
 
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.spring.EnableScheduledTasks.ScheduledTaskBeanRegistration;
 
 /**
- * Spring annotation for enabling scheduled tasks. Sets up the {@link ScheduledTaskServiceFactory} that will provide an
- * instance of the {@link com.storebrand.scheduledtask.ScheduledTaskService}.
+ * Spring annotation for enabling scheduled tasks. Sets up the {@link ScheduledTaskRegistryFactory} that will provide an
+ * instance of the {@link ScheduledTaskRegistry}.
  * <p>
  * The factory will by default assume that we want to use the standard implementation of repositories provided by the
  * scheduledtask-db-sql package. These require a {@link javax.sql.DataSource} bean in the spring context. If there are
@@ -46,8 +47,8 @@ public @interface EnableScheduledTasks {
                 BeanDefinitionRegistry registry) {
             // :: Register ScheduledTaskServiceFactory bean
             log.info("Enabling Scheduled tasks - Registering Spring bean definition for "
-                    + ScheduledTaskServiceFactory.class.getSimpleName());
-            BeanDefinition beanDefinition = BeanDefinitionBuilder.genericBeanDefinition(ScheduledTaskServiceFactory.class)
+                    + ScheduledTaskRegistryFactory.class.getSimpleName());
+            BeanDefinition beanDefinition = BeanDefinitionBuilder.genericBeanDefinition(ScheduledTaskRegistryFactory.class)
                     .getBeanDefinition();
             registry.registerBeanDefinition(
                     AnnotationBeanNameGenerator.INSTANCE.generateBeanName(beanDefinition, registry), beanDefinition);
