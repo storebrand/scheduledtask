@@ -5,11 +5,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 
 /**
- * Internal repository used by {@link ScheduledTaskServiceImpl} to handle master election for a node. An implementation
+ * Internal repository used by {@link ScheduledTaskRegistryImpl} to handle master election for a node. An implementation
  * of this interface is required for managing master locks. This repository is only for internal use, and should not
  * be used outside scheduledtask-core, except for providing implementations.
  * <p>

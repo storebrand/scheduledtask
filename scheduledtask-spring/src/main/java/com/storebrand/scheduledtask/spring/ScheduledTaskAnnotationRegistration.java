@@ -25,7 +25,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.util.ClassUtils;
 
-import com.storebrand.scheduledtask.ScheduledTaskService;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.annotation.CombinedInstanceResolver;
 import com.storebrand.scheduledtask.annotation.ScheduledTask;
 import com.storebrand.scheduledtask.annotation.ScheduledTaskAnnotationUtils;
@@ -37,7 +37,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 /**
  * Add this bean to Spring in order to automatically register all {@link ScheduledTask} annotated methods in beans.
  * <p>
- * This requires an implementation of {@link ScheduledTaskService} to be present in the Spring context. The easiest way
+ * This requires an implementation of {@link ScheduledTaskRegistry} to be present in the Spring context. The easiest way
  * to get that is to use {@link EnableScheduledTasks}. That will also import this bean.
  * <p>
  * If you want control over instance creation it is possible to add an implementation of
@@ -59,7 +59,7 @@ public class ScheduledTaskAnnotationRegistration implements BeanPostProcessor, A
     private ConfigurableApplicationContext _applicationContext;
     private ConfigurableListableBeanFactory _configurableListableBeanFactory;
 
-    private ScheduledTaskService _scheduledTaskService;
+    private ScheduledTaskRegistry _scheduledTaskRegistry;
     private ScheduledTaskInstanceResolver _instanceResolver;
 
     @Override
@@ -139,7 +139,7 @@ public class ScheduledTaskAnnotationRegistration implements BeanPostProcessor, A
                 + " @ScheduledTask methods.");
 
         // ?: Do we have a ScheduledTaskService object already?
-        if (_scheduledTaskService != null) {
+        if (_scheduledTaskRegistry != null) {
             // -> Yes, this means that the context has been refreshed, and we have a reference to the service.
             // We can go ahead and register the scheduled task immediately.
             methodsWithScheduledTaskAnnotation.forEach(this::registerScheduledTaskMethod);
@@ -160,7 +160,7 @@ public class ScheduledTaskAnnotationRegistration implements BeanPostProcessor, A
                 log.warn(LOG_PREFIX + "Trying to register mehtod [" + method + "] more than once.");
                 return;
             }
-            ScheduledTaskAnnotationUtils.registerMethod(method, _scheduledTaskService, _instanceResolver);
+            ScheduledTaskAnnotationUtils.registerMethod(method, _scheduledTaskRegistry, _instanceResolver);
             _registeredMethodsWithScheduledTaskAnnotations.add(method);
         }
     }
@@ -168,7 +168,7 @@ public class ScheduledTaskAnnotationRegistration implements BeanPostProcessor, A
     @EventListener
     public void onContextRefreshedEvent(ContextRefreshedEvent ev) {
         ApplicationContext applicationContext = ev.getApplicationContext();
-        _scheduledTaskService = applicationContext.getBean(ScheduledTaskService.class);
+        _scheduledTaskRegistry = applicationContext.getBean(ScheduledTaskRegistry.class);
 
         try {
             _instanceResolver = applicationContext.getBean(ScheduledTaskInstanceResolver.class);

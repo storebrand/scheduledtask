@@ -19,15 +19,15 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
-import com.storebrand.scheduledtask.ScheduledTaskServiceImpl;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
- * Repository used by {@link ScheduledTaskServiceImpl} to handle master election for a node.
+ * Repository used by {@link ScheduledTaskRegistryImpl} to handle master election for a node.
  * On each {@link #tryAcquireLock(String, String)} it will also try to insert the lock, if the node managed to insert it
  * then that node has the lock.
  * <p>

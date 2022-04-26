@@ -7,9 +7,9 @@ import java.util.Collection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleStatus;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleStatus;
 
 /**
  * Utility class for interacting with {@link ScheduledTask} annotated methods.
@@ -44,12 +44,12 @@ public class ScheduledTaskAnnotationUtils {
      *
      * @param method
      *         the method with {@link ScheduledTask} annotation.
-     * @param scheduledTaskService
+     * @param scheduledTaskRegistry
      *         the scheduled task service, where it should be registered.
      * @param instanceResolver
      *         an instance resolver that will fetch us an instance that will run the method.
      */
-    public static void registerMethod(Method method, ScheduledTaskService scheduledTaskService,
+    public static void registerMethod(Method method, ScheduledTaskRegistry scheduledTaskRegistry,
             ScheduledTaskInstanceResolver instanceResolver) {
         if (!method.isAnnotationPresent(ScheduledTask.class)) {
             throw new IllegalArgumentException("Annotation @ScheduledTask not present on method.");
@@ -75,7 +75,7 @@ public class ScheduledTaskAnnotationUtils {
                     : annotation.name() + "#" + number++;
 
             log.info("Registering scheduled task annotated method [" + name + "]");
-            scheduledTaskService.buildScheduledTask(name, annotation.cronExpression(), context -> {
+            scheduledTaskRegistry.buildScheduledTask(name, annotation.cronExpression(), context -> {
                 try {
                     return (ScheduleStatus) method.invoke(instance, context);
                 }

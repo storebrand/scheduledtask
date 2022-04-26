@@ -5,9 +5,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.Schedule;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunnable;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
 
 /**
  * Represents a running scheduled task.
@@ -100,7 +100,7 @@ public interface ScheduledTask {
 
     /**
      * Retrieve the cronExpression that where set when the schedule was created by
-     * {@link ScheduledTaskService#buildScheduledTask(String, String, ScheduleRunnable)}.
+     * {@link ScheduledTaskRegistry#buildScheduledTask(String, String, ScheduleRunnable)}.
      */
     String getDefaultCronExpression();
 

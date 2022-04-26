@@ -20,7 +20,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig.StaticRetentionPolicy;
-import com.storebrand.scheduledtask.ScheduledTaskService.State;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 

@@ -7,12 +7,12 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * ScheduledTask methods for the scheduler service.
+ * ScheduledTask registry API. This is the main entry point for applications that use scheduled tasks.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
  * @author Kristian Hiim
  */
-public interface ScheduledTaskService {
+public interface ScheduledTaskRegistry {
 
     /**
      * Create a new schedule. Configure additional parameters on the {@link ScheduledTaskBuilder} and finally call
@@ -28,6 +28,19 @@ public interface ScheduledTaskService {
      */
     ScheduledTaskBuilder buildScheduledTask(String name, String cronExpression, ScheduleRunnable runnable);
 
+    /**
+     * Adds a scheduled task, and immediately starts it. This will use default values for all optional parameters. If
+     * you need to configure any parameters use {@link #buildScheduledTask(String, String, ScheduleRunnable)}, and call
+     * {@link ScheduledTaskBuilder#start()} after defining additional parameters.
+     *
+     * @param name
+     *         - Name of the schedule
+     * @param cronExpression
+     *         - When this schedule should run.
+     * @param runnable
+     *         - The runnable that this schedule should run.
+     * @return a ScheduledTask implementation that is now registered in the service, and runs the schedule.
+     */
     default ScheduledTask addAndStartScheduledTask(String name, String cronExpression, ScheduleRunnable runnable) {
         return buildScheduledTask(name, cronExpression, runnable).start();
     }

@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
-import com.storebrand.scheduledtask.ScheduledTaskService;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.db.sql.MasterLockSqlRepository;
 import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository;
 import com.storebrand.scheduledtask.spring.testscheduledtasks1.SpringComponentWithScheduledTask;
@@ -60,8 +60,8 @@ public class ScheduledTaskSpringTest {
             context.refresh();
 
             // At this point we should have a ScheduledTaskService.
-            ScheduledTaskService scheduledTaskService = context.getBean(ScheduledTaskService.class);
-            assertNotNull(scheduledTaskService);
+            ScheduledTaskRegistry scheduledTaskRegistry = context.getBean(ScheduledTaskRegistry.class);
+            assertNotNull(scheduledTaskRegistry);
         }
     }
 
@@ -79,8 +79,8 @@ public class ScheduledTaskSpringTest {
             context.refresh();
 
             // At this point we should have a ScheduledTaskService with a registered scheduled task
-            ScheduledTaskService scheduledTaskService = context.getBean(ScheduledTaskService.class);
-            assertNotNull(scheduledTaskService.getScheduledTask(SpringComponentWithScheduledTask.SCHEDULED_TASK_NAME));
+            ScheduledTaskRegistry scheduledTaskRegistry = context.getBean(ScheduledTaskRegistry.class);
+            assertNotNull(scheduledTaskRegistry.getScheduledTask(SpringComponentWithScheduledTask.SCHEDULED_TASK_NAME));
         }
     }
 

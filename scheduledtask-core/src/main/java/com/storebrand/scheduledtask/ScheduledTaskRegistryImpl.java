@@ -27,12 +27,13 @@ import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
- * Implementation of the {@link ScheduledTaskService}
+ * Implementation of the {@link ScheduledTaskRegistry}
  *
  * @author Dag Bertelsen - dabe@skagenfondene.no - dabe@dagbertelsen.com - 2021.02
+ * @author Kristian Hiim
  */
-public class ScheduledTaskServiceImpl implements ScheduledTaskService {
-    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskServiceImpl.class);
+public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
+    private static final Logger log = LoggerFactory.getLogger(ScheduledTaskRegistryImpl.class);
     private final Map<String, ScheduledTaskRunner> _schedules = new ConcurrentHashMap<>();
 
     private static final String MASTER_LOCK_NAME = "scheduledTask";
@@ -43,7 +44,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     private final List<ScheduledTaskListener> _scheduledTaskListeners = new CopyOnWriteArrayList<>();
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public ScheduledTaskServiceImpl(ScheduledTaskRepository scheduledTaskRepository,
+    public ScheduledTaskRegistryImpl(ScheduledTaskRepository scheduledTaskRepository,
             MasterLockRepository masterLockRepository, Clock clock) {
         _clock = clock;
         _masterLockRepository = masterLockRepository;
@@ -148,10 +149,10 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         private volatile boolean _isInitialRun = true;
         private final Object _syncObject = new Object();
         private final MasterLockRepository _masterLockRepository;
-        private final ScheduledTaskServiceImpl _storebrandScheduleService;
+        private final ScheduledTaskRegistryImpl _storebrandScheduleService;
 
         MasterLockKeeper(MasterLockRepository masterLockRepository,
-                ScheduledTaskServiceImpl storebrandScheduleService,
+                ScheduledTaskRegistryImpl storebrandScheduleService,
                 Clock clock) {
             _masterLockRepository = masterLockRepository;
             _storebrandScheduleService = storebrandScheduleService;

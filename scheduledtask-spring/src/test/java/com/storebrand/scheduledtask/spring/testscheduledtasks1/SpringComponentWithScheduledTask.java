@@ -4,8 +4,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.stereotype.Component;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleStatus;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleStatus;
 import com.storebrand.scheduledtask.annotation.ScheduledTask;
 
 @Component

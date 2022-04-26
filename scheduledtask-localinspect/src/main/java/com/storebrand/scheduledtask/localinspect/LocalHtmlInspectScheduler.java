@@ -17,12 +17,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import com.storebrand.scheduledtask.ScheduledTaskService.LogEntry;
-import com.storebrand.scheduledtask.ScheduledTaskService.MasterLock;
-import com.storebrand.scheduledtask.ScheduledTaskService;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunContext;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTask;
-import com.storebrand.scheduledtask.ScheduledTaskService.State;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -52,12 +52,12 @@ public class LocalHtmlInspectScheduler {
     public static final String MONITOR_TIME_TO = "time-to";
     public static final String MONITOR_CHANGE_CRON_SCHEDULER_NAME = "changeCronSchedulerName.local";
 
-    private final ScheduledTaskService _scheduledTaskService;
+    private final ScheduledTaskRegistry _scheduledTaskRegistry;
     private final Clock _clock;
 
     @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "This is standard dependency injection.")
-    public LocalHtmlInspectScheduler(ScheduledTaskService scheduledTaskService, Clock clock) {
-        _scheduledTaskService = scheduledTaskService;
+    public LocalHtmlInspectScheduler(ScheduledTaskRegistry scheduledTaskRegistry, Clock clock) {
+        _scheduledTaskRegistry = scheduledTaskRegistry;
         _clock = clock;
     }
 
@@ -257,13 +257,13 @@ public class LocalHtmlInspectScheduler {
      */
     public void createSchedulesOverview(Writer out) throws IOException {
         // Get all the schedules
-        List<MonitorScheduleDto> bindingsDtoMap = _scheduledTaskService.getScheduledTasks().values().stream()
+        List<MonitorScheduleDto> bindingsDtoMap = _scheduledTaskRegistry.getScheduledTasks().values().stream()
                 .map(scheduledTask -> new MonitorScheduleDto(scheduledTask))
                 .collect(toList());
 
         // Create a description informing of node that has the master lock.
         String masterNodeDescription;
-        Optional<MasterLock> masterLock = _scheduledTaskService.getMasterLock();
+        Optional<MasterLock> masterLock = _scheduledTaskRegistry.getMasterLock();
         // ?: did we find any lock?
         if (!masterLock.isPresent()) {
             // -> No, nobody has the lock
@@ -284,7 +284,7 @@ public class LocalHtmlInspectScheduler {
         // Top header informing on what node is currently master
         out.write("<h1>Active Schedules</h1>");
         // ?: Is this running node master?
-        if (_scheduledTaskService.hasMasterLock()) {
+        if (_scheduledTaskRegistry.hasMasterLock()) {
             // -> Yes, this running node is master so set the alert-success class
             out.write("<div class=\"alert alert-success\">");
         }
@@ -417,7 +417,7 @@ public class LocalHtmlInspectScheduler {
      */
     public void createScheduleRunsTable(Writer out, LocalDateTime fromDate, LocalDateTime toDate,
             String scheduleName, String includeLogsForInstanceId) throws IOException {
-        ScheduledTask schedule = _scheduledTaskService.getScheduledTask(scheduleName);
+        ScheduledTask schedule = _scheduledTaskRegistry.getScheduledTask(scheduleName);
 
         // ?: Did we get a schedule?
         if (schedule == null) {
@@ -599,7 +599,7 @@ public class LocalHtmlInspectScheduler {
      * disable the execution of the supplied runnable for the schedule.
      */
     public void toggleActive(String scheduleName) {
-        _scheduledTaskService.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+        _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             // Toggle the state
             if (scheduled.isActive()) {
                 scheduled.stop();
@@ -617,7 +617,7 @@ public class LocalHtmlInspectScheduler {
      * via the db and the master node check the db every 2 min.
      */
     public void triggerSchedule(String scheduleName) {
-        _scheduledTaskService.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+        _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             scheduled.runNow();
             return scheduled;
         });
@@ -640,7 +640,7 @@ public class LocalHtmlInspectScheduler {
             // cronExpressions and use the default one.
             newCron = null;
         }
-        _scheduledTaskService.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
+        _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             scheduled.setOverrideExpression(newCron);
             return scheduled;
         });

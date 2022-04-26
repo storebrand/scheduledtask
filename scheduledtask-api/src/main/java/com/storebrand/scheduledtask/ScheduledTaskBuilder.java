@@ -2,11 +2,11 @@ package com.storebrand.scheduledtask;
 
 import com.storebrand.scheduledtask.ScheduledTask.Criticality;
 import com.storebrand.scheduledtask.ScheduledTask.Recovery;
-import com.storebrand.scheduledtask.ScheduledTaskService.ScheduleRunnable;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
 
 /**
  * Initializer that is used to build a scheduled task. Get an implementation by calling
- * {@link ScheduledTaskService#buildScheduledTask(String, String, ScheduleRunnable)}, and initialize the scheduled task by
+ * {@link ScheduledTaskRegistry#buildScheduledTask(String, String, ScheduleRunnable)}, and initialize the scheduled task by
  * filling in properties, and finally calling {@link ScheduledTaskBuilder#start()}.
  *
  * @author Kristian Hiim
