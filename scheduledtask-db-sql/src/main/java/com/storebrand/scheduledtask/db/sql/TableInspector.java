@@ -70,7 +70,7 @@ class TableInspector {
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql);
              ResultSet result = pStmt.executeQuery()) {
 
-            if (result.first()) {
+            if (result.next()) {
                 return result.getInt("version");
             }
         }

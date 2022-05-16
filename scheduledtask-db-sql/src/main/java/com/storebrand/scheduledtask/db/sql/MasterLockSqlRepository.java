@@ -186,7 +186,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
             pStmt.setString(1, lockName);
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
-                if (result.first()) {
+                if (result.next()) {
                     // -> Yes we found the first row
                     MasterLockDto dbo = new MasterLockDto(
                             result.getString("lock_name"),

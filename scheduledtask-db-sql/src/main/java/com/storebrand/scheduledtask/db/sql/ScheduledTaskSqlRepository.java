@@ -200,7 +200,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             pStmt.setString(1, scheduleName);
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
-                if (result.first()) {
+                if (result.next()) {
                     // -> Yes we found the first row
                     ScheduleDbo scheduleDbo = new ScheduleDbo(
                             result.getString("schedule_name"),
@@ -302,7 +302,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             List<LogEntry> logEntries = getLogEntries(instanceId);
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
-                if (result.first()) {
+                if (result.next()) {
                     // -> Yes we found the first row
                     return Optional.of(new ScheduledRunDbo(
                             result.getString("schedule_name"),
@@ -335,7 +335,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
-                if (result.first()) {
+                if (result.next()) {
                     // -> Yes we found the first row
                     ScheduledRunDbo scheduledRun = new ScheduledRunDbo(
                             result.getString("schedule_name"),
@@ -372,7 +372,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row (we should only find one row)?
-                if (result.first()) {
+                if (result.next()) {
                     // -> Yes we found the first row
                     ScheduledRunDbo scheduleRunDbo = new ScheduledRunDbo(
                             result.getString("schedule_name"),
