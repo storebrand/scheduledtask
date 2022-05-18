@@ -92,22 +92,22 @@ public interface ScheduledTaskRepository {
      *
      * @param scheduleName
      *         - Name of the schedule that did the run
-     * @param instanceId
-     *         - Unique identifier for this run.
+     * @param hostname
+     *         - The host that this run is running on.
      * @param runStart
      *         - When this run where started.
      * @param statusMsg
      *         - Short describing text informing that this scheduleRun is started.
      *         <p>
      *         Will by default set the state to {@link State#STARTED}
-     * @return boolean - true if the run where inserted.
+     * @return the run id of the new scheduled run.
      */
-    boolean addScheduleRun(String scheduleName, String instanceId, Instant runStart, String statusMsg);
+    long addScheduleRun(String scheduleName, String hostname, Instant runStart, String statusMsg);
 
     /**
      * Update the {@link State} of a schedule run.
      *
-     * @param instanceId
+     * @param runId
      *         - Unique id for the schedule run to update.
      * @param state
      *         - a new {@link State} to set for this run. NOTE the {@link State#STARTED} is not valid here. Also the
@@ -118,7 +118,7 @@ public interface ScheduledTaskRepository {
      *         - Optional, a stack trace set when the state change is {@link State#FAILED}
      * @return boolean, true if the update where successful.
      */
-    boolean setStatus(String instanceId, State state, String statusMsg, String statusStackTrace, Instant statusTime);
+    boolean setStatus(long runId, State state, String statusMsg, String statusStackTrace, Instant statusTime);
 
     boolean setStatus(ScheduledRunDto scheduledRunDto);
 
@@ -126,11 +126,11 @@ public interface ScheduledTaskRepository {
      * Get the specific {@link ScheduledRunDto} with the specified instanceId. Note this does not load the logs of the
      * schedule run. Use {@link #getLogEntries(String)} to fetch these.
      *
-     * @param instanceId
-     *         - The instanceId to retrieve the scheduled run for.
+     * @param runId
+     *         - The runId to retrieve the scheduled run for.
      * @return
      */
-    Optional<ScheduledRunDto> getScheduleRun(String instanceId);
+    Optional<ScheduledRunDto> getScheduleRun(long runId);
 
     /**
      * Get the last inserted ScheduleRun for the given scheduleName.
@@ -163,21 +163,21 @@ public interface ScheduledTaskRepository {
 
     /**
      * Add a log entry to a specified scheduled task run, by using the scheduled runs instanceId.
-     * @param instanceId
-     *         - InstanceId for the schedule run to add the logs to.
+     * @param runId
+     *         - ID for the schedule run to add the logs to.
      * @param logTime
      *         - log time.
      * @param message
      *         - log message.
      */
-    default void addLogEntry(String instanceId, LocalDateTime logTime, String message) {
-        addLogEntry(instanceId, logTime, message, null);
+    default void addLogEntry(long runId, LocalDateTime logTime, String message) {
+        addLogEntry(runId, logTime, message, null);
     }
 
     /**
      * Add a log entry to a specified scheduled task run, by using the scheduled runs instanceId.
-     * @param instanceId
-     *         - InstanceId for the schedule run to add the logs to.
+     * @param runId
+     *         - runId for the schedule run to add the logs to.
      * @param logTime
      *         - log time.
      * @param message
@@ -185,16 +185,16 @@ public interface ScheduledTaskRepository {
      * @param stackTrace
      *         - optional stack trace for error messages.
      */
-    void addLogEntry(String instanceId, LocalDateTime logTime, String message, String stackTrace);
+    void addLogEntry(long runId, LocalDateTime logTime, String message, String stackTrace);
 
     /**
      * Get all logEntries for a given schedule run instance.
      *
-     * @param instanceId
-     *         - InstanceId for the schedule run to add the logs to
+     * @param runId
+     *         - runId for the schedule run to add the logs to
      * @return List<LogEntryDbo> - The logEntries (if any) for that schedule run instance
      */
-    List<LogEntry> getLogEntries(String instanceId);
+    List<LogEntry> getLogEntries(long runId);
 
     void executeRetentionPolicy(String scheduleName, RetentionPolicy retentionPolicy);
 
@@ -204,18 +204,20 @@ public interface ScheduledTaskRepository {
      * Holds the information on a current or previous run.
      */
     class ScheduledRunDto {
+        private long runId;
         private final String scheduleName;
-        private final String instanceId;
+        private final String hostname;
         private State status;
         private String statusMsg;
         private String statusStackTrace;
         private final Instant runStart;
         private Instant statusTime;
 
-        public ScheduledRunDto(String scheduleName, String instanceId, State status, String statusMsg,
+        public ScheduledRunDto(long runId, String scheduleName, String hostname, State status, String statusMsg,
                 String statusStackTrace, Instant runStart, Instant statusTime) {
+            this.runId = runId;
             this.scheduleName = scheduleName;
-            this.instanceId = instanceId;
+            this.hostname = hostname;
             this.status = status;
             this.statusMsg = statusMsg;
             this.statusStackTrace = statusStackTrace;
@@ -223,17 +225,22 @@ public interface ScheduledTaskRepository {
             this.statusTime = statusTime;
         }
 
-        public static ScheduledRunDto newWithStateStarted(String scheduleName, String instanceId, Instant runStart) {
-            return new ScheduledRunDto(scheduleName, instanceId, State.STARTED, null,
+        public static ScheduledRunDto newWithStateStarted(long runId, String scheduleName, String hostname,
+                Instant runStart) {
+            return new ScheduledRunDto(runId, scheduleName, hostname, State.STARTED, null,
                     null, runStart, null);
+        }
+
+        public long getRunId() {
+            return runId;
         }
 
         public String getScheduleName() {
             return scheduleName;
         }
 
-        public String getInstanceId() {
-            return instanceId;
+        public String getHostname() {
+            return hostname;
         }
 
         public State getStatus() {

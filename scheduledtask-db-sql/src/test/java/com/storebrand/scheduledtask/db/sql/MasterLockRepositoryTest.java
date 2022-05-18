@@ -35,8 +35,8 @@ public class MasterLockRepositoryTest {
     private final DataSource _dataSource;
     private final ClockMock _clock = new ClockMock();
     static final String MASTER_TABLE_CREATE_SQL = "CREATE TABLE " + MasterLockSqlRepository.MASTER_LOCK_TABLE + " ( "
-    + " lock_name VARCHAR NOT NULL, "
-    + " node_name VARCHAR NOT NULL, "
+    + " lock_name VARCHAR(255) NOT NULL, "
+    + " node_name VARCHAR(255) NOT NULL, "
     + " lock_taken_time datetime2 NOT NULL, "
     + " lock_last_updated_time datetime2 NOT NULL, "
     + " CONSTRAINT PK_lock_name PRIMARY KEY (lock_name) "

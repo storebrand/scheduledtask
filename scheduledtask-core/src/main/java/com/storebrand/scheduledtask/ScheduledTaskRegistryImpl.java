@@ -36,22 +36,39 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskRegistryImpl.class);
     private final Map<String, ScheduledTaskRunner> _schedules = new ConcurrentHashMap<>();
 
+    private final MasterLockRepository _masterLockRepository;
+    private final ScheduledTaskRepository _scheduledTaskRepository;
+    private final boolean _testMode;
     private static final String MASTER_LOCK_NAME = "scheduledTask";
     private final MasterLockKeeper _masterLockKeeper;
     private final Clock _clock;
-    private final MasterLockRepository _masterLockRepository;
-    private final ScheduledTaskRepository _scheduledTaskRepository;
     private final List<ScheduledTaskListener> _scheduledTaskListeners = new CopyOnWriteArrayList<>();
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public ScheduledTaskRegistryImpl(ScheduledTaskRepository scheduledTaskRepository,
-            MasterLockRepository masterLockRepository, Clock clock) {
+            MasterLockRepository masterLockRepository, Clock clock, boolean testMode) {
         _clock = clock;
         _masterLockRepository = masterLockRepository;
         _scheduledTaskRepository = scheduledTaskRepository;
+        _testMode = testMode;
 
         _masterLockKeeper = new MasterLockKeeper(_masterLockRepository, this, clock);
-        _masterLockKeeper.start();
+        // ?: Are we running in test mode?
+        if (!_testMode) {
+            // -> No, then we start the MasterLockKeeper, so we try to get and keep the master lock.
+            _masterLockKeeper.start();
+        }
+        else {
+            // -> Yes, then we write a log message to let the world know.
+            log.info("## TEST MODE ENABLED ## Scheduled tasks will only run if explicitly told to do so by calling"
+                    + " ScheduledTask.runNow() - "
+                    + " Background threads are disabled. This should only be enabled in unit tests.");
+        }
+    }
+
+    public ScheduledTaskRegistryImpl(ScheduledTaskRepository scheduledTaskRepository,
+            MasterLockRepository masterLockRepository, Clock clock) {
+        this(scheduledTaskRepository, masterLockRepository, clock, false);
     }
 
 
@@ -125,6 +142,10 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         for (ScheduledTaskListener listener : _scheduledTaskListeners) {
             listener.onScheduledTaskCreated(scheduledTask);
         }
+    }
+
+    boolean isTestMode() {
+        return _testMode;
     }
 
     // ===== MasterLock and Schedule ===================================================================================
@@ -379,8 +400,8 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                 ScheduledTaskConfig config = new ScheduledTaskConfig(_scheduleName, _cronExpression,
                         _maxExpectedMinutesToRun, _criticality, _recovery, retentionPolicy);
 
-                return new ScheduledTaskRunner(config, _runnable,
-                        _masterLockKeeper, _scheduledTaskRepository, _clock);
+                return new ScheduledTaskRunner(config, _runnable, ScheduledTaskRegistryImpl.this,
+                        _scheduledTaskRepository, _clock);
             });
             notifyScheduledTaskCreated(scheduledTask);
             return scheduledTask;

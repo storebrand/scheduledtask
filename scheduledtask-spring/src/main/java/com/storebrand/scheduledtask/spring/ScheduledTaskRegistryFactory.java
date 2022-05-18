@@ -104,7 +104,8 @@ public class ScheduledTaskRegistryFactory extends AbstractFactoryBean<ScheduledT
                     clock);
         });
 
-        return new ScheduledTaskRegistryImpl(scheduledTaskRepository, masterLockRepository, clock);
+        return new ScheduledTaskRegistryImpl(scheduledTaskRepository, masterLockRepository, clock,
+                TestModeUtil.isTestMode());
     }
 
     @Override

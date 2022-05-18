@@ -245,7 +245,7 @@ public class LocalHtmlInspectScheduler {
      *     <li>{@link #MONITOR_SHOW_RUNS} - Schedule name to be used with
      *     {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}. This will render
      *     the historic runs for this schedule.</li>
-     *     <li>{@link #MONITOR_SHOW_LOGS} - InstanceId to show the logs for, note the scheduleName must also be set.
+     *     <li>{@link #MONITOR_SHOW_LOGS} - RunId to show the logs for, note the scheduleName must also be set.
      *     is used with {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}</li>
      *     <li>{@link #MONITOR_CHANGE_ACTIVE_PARAM} - If set is used to toggle the active state with
      *     {@link #toggleActive(String)}</li>
@@ -410,13 +410,13 @@ public class LocalHtmlInspectScheduler {
      *          - A {@link LocalDateTime} to filter to date on when to show the historic runs.
      * @param scheduleName
      *          - A schedule name to show the runs for. usually retrieved from {@link #MONITOR_SHOW_RUNS} parameter.
-     * @param includeLogsForInstanceId
+     * @param includeLogsForRunId
      *          - If set also retrieves the runs logs for a schedule. Usually retrieved from {@link #MONITOR_SHOW_LOGS}
      *          parameter.
      * @throws IOException
      */
     public void createScheduleRunsTable(Writer out, LocalDateTime fromDate, LocalDateTime toDate,
-            String scheduleName, String includeLogsForInstanceId) throws IOException {
+            String scheduleName, String includeLogsForRunId) throws IOException {
         ScheduledTask schedule = _scheduledTaskRegistry.getScheduledTask(scheduleName);
 
         // ?: Did we get a schedule?
@@ -474,18 +474,19 @@ public class LocalHtmlInspectScheduler {
             return;
         }
 
-        // ?: Should we also retrieve the detailed logs for a specific instanceId?
-        if (includeLogsForInstanceId != null) {
+        // ?: Should we also retrieve the detailed logs for a specific runId?
+        if (includeLogsForRunId != null) {
             // -> Yes, we should get full logs for this schedule
-            ScheduleRunContext instance = schedule.getInstance(includeLogsForInstanceId);
+            final long runId = Long.parseLong(includeLogsForRunId);
+            ScheduleRunContext instance = schedule.getInstance(runId);
             // ?: Did we get logs for this instance
             if (instance != null) {
                 // -> Yes we did find an instance, check if it has some logEntries
                 List<MonitorHistoricRunLogEntryDto> logs = instance.getLogEntries()
-                        .stream().map(logEntryDto -> MonitorHistoricRunLogEntryDto.fromDto(logEntryDto))
+                        .stream().map(MonitorHistoricRunLogEntryDto::fromDto)
                         .collect(toList());
                     scheduleRuns.stream()
-                            .filter(run -> run.getInstanceId().equalsIgnoreCase(includeLogsForInstanceId))
+                            .filter(run -> run.getRunId() == runId)
                             .findFirst()
                             .ifPresent(dto -> dto.setLogEntries(logs));
             }
@@ -500,8 +501,9 @@ public class LocalHtmlInspectScheduler {
         // :: Table header
         out.write("<table class=\"historic-runs-table table\">"
                 + "    <thead>"
+                + "    <td><b>RunId</b></td>"
                 + "    <td><b>Scheduler name</b></td>"
-                + "    <td><b>InstanceId</b></td>"
+                + "    <td><b>Hostname</b></td>"
                 + "    <td><b>Status</b></td>"
                 + "    <td><b>Status msg</b></td>"
                 + "    <td><b>Status throwable</b></td>"
@@ -527,8 +529,9 @@ public class LocalHtmlInspectScheduler {
 
     public void renderScheduleRunsRow(Writer out, MonitorHistoricRunDto runDto) throws IOException {
         out.write("<tr>"
+                + "    <td>" + runDto.getRunId() + "</td>"
                 + "    <td>" + runDto.getScheduleName() + "</td>"
-                + "    <td>" + runDto.getInstanceId() + "</td>"
+                + "    <td>" + runDto.getHostname() + "</td>"
                 + "    <td>" + runDto.getStatus() + "</td>"
                 + "    <td>" + runDto.getStatusMsg() + "</td>"
                 + "    <td>"
@@ -555,7 +558,7 @@ public class LocalHtmlInspectScheduler {
                     + "            <input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\""
                     + "                   value=\"" + runDto.getScheduleName() + "\">"
                     + "            <input type=\"hidden\" name=\"showLogs.local\" class=\"form-control\""
-                    + "                   value=\"" + runDto.getInstanceId() + "\">"
+                    + "                   value=\"" + runDto.getRunId() + "\">"
                     + "            <span class=\"input-group-btn show-logs\">"
                     + "                <button class=\"btn btn-primary\" type=\"submit\">logs</button>"
                     + "            </span>"
@@ -762,8 +765,9 @@ public class LocalHtmlInspectScheduler {
     }
 
     public static final class MonitorHistoricRunDto {
+        private final long runId;
         private final String scheduleName;
-        private final String instanceId;
+        private final String hostname;
         private final State status;
         private final String statusMsg;
         private final String statusStackTrace;
@@ -771,10 +775,11 @@ public class LocalHtmlInspectScheduler {
         private final LocalDateTime statusTime;
         private List<MonitorHistoricRunLogEntryDto> logEntries = new ArrayList<>();
 
-        public MonitorHistoricRunDto(String scheduleName, String instanceId, State status, String statusMsg,
+        public MonitorHistoricRunDto(long runId, String scheduleName, String hostname, State status, String statusMsg,
                 String statusStackTrace, LocalDateTime runStart, LocalDateTime statusTime) {
+            this.runId = runId;
             this.scheduleName = scheduleName;
-            this.instanceId = instanceId;
+            this.hostname = hostname;
             this.status = status;
             this.statusMsg = statusMsg;
             this.statusStackTrace = statusStackTrace;
@@ -782,22 +787,27 @@ public class LocalHtmlInspectScheduler {
             this.statusTime = statusTime;
         }
 
-        public static MonitorHistoricRunDto fromContext(ScheduleRunContext contex) {
-            return new MonitorHistoricRunDto(contex.getScheduledName(),
-                    contex.instanceId(),
-                    contex.getStatus(),
-                    contex.getStatusMsg(),
-                    contex.getStatusStackTrace(),
-                    contex.getRunStarted(),
-                    contex.getStatusTime());
+        public static MonitorHistoricRunDto fromContext(ScheduleRunContext context) {
+            return new MonitorHistoricRunDto(context.getRunId(),
+                    context.getScheduledName(),
+                    context.getHostname(),
+                    context.getStatus(),
+                    context.getStatusMsg(),
+                    context.getStatusStackTrace(),
+                    context.getRunStarted(),
+                    context.getStatusTime());
+        }
+
+        public long getRunId() {
+            return runId;
         }
 
         public String getScheduleName() {
             return scheduleName;
         }
 
-        public String getInstanceId() {
-            return instanceId;
+        public String getHostname() {
+            return hostname;
         }
 
         public State getStatus() {

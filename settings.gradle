@@ -6,4 +6,5 @@ include 'scheduledtask-spring'
 include 'scheduledtask-localinspect'
 include 'scheduledtask-healthcheck'
 include 'scheduledtask-annotation'
+include 'scheduledtask-testing'
 

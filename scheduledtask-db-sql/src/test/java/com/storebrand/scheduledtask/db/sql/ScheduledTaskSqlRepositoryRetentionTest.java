@@ -83,7 +83,7 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
                 LocalDateTime.of(2000, 1, 1, 1, 1),
                 LocalDateTime.of(3000, 1, 1, 1, 1));
         assertEquals(1, scheduledRuns.size());
-        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
+        assertEquals("instance4", scheduledRuns.get(0).getHostname());
     }
 
     @Test
@@ -113,9 +113,9 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
                 LocalDateTime.of(2000, 1, 1, 1, 1),
                 LocalDateTime.of(3000, 1, 1, 1, 1));
         assertEquals(3, scheduledRuns.size());
-        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
-        assertEquals("instance3", scheduledRuns.get(1).getInstanceId());
-        assertEquals("instance1", scheduledRuns.get(2).getInstanceId());
+        assertEquals("instance4", scheduledRuns.get(0).getHostname());
+        assertEquals("instance3", scheduledRuns.get(1).getHostname());
+        assertEquals("instance1", scheduledRuns.get(2).getHostname());
     }
 
     @Test
@@ -145,8 +145,8 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
                 LocalDateTime.of(2000, 1, 1, 1, 1),
                 LocalDateTime.of(3000, 1, 1, 1, 1));
         assertEquals(2, scheduledRuns.size());
-        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
-        assertEquals("instance2", scheduledRuns.get(1).getInstanceId());
+        assertEquals("instance4", scheduledRuns.get(0).getHostname());
+        assertEquals("instance2", scheduledRuns.get(1).getHostname());
     }
 
 
@@ -177,8 +177,8 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
                 LocalDateTime.of(2000, 1, 1, 1, 1),
                 LocalDateTime.of(3000, 1, 1, 1, 1));
         assertEquals(2, scheduledRuns.size());
-        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
-        assertEquals("instance3", scheduledRuns.get(1).getInstanceId());
+        assertEquals("instance4", scheduledRuns.get(0).getHostname());
+        assertEquals("instance3", scheduledRuns.get(1).getHostname());
     }
 
     @Test
@@ -208,8 +208,8 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
                 LocalDateTime.of(2000, 1, 1, 1, 1),
                 LocalDateTime.of(3000, 1, 1, 1, 1));
         assertEquals(2, scheduledRuns.size());
-        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
-        assertEquals("instance2", scheduledRuns.get(1).getInstanceId());
+        assertEquals("instance4", scheduledRuns.get(0).getHostname());
+        assertEquals("instance2", scheduledRuns.get(1).getHostname());
     }
 
     @Test
@@ -239,17 +239,17 @@ public class ScheduledTaskSqlRepositoryRetentionTest {
                 LocalDateTime.of(2000, 1, 1, 1, 1),
                 LocalDateTime.of(3000, 1, 1, 1, 1));
         assertEquals(2, scheduledRuns.size());
-        assertEquals("instance4", scheduledRuns.get(0).getInstanceId());
-        assertEquals("instance2", scheduledRuns.get(1).getInstanceId());
+        assertEquals("instance4", scheduledRuns.get(0).getHostname());
+        assertEquals("instance2", scheduledRuns.get(1).getHostname());
     }
 
 
-    private void createRunWithStatus(String scheduleName, LocalDateTime runTime, String instanceId, State state) {
+    private void createRunWithStatus(String scheduleName, LocalDateTime runTime, String hostname, State state) {
         _clock.setFixedClock(runTime);
-        _repository.addScheduleRun(scheduleName, instanceId,
+        long runId = _repository.addScheduleRun(scheduleName, hostname,
                 runTime.atZone(ZoneId.systemDefault()).toInstant(), "schedule run inserted");
-        _repository.addLogEntry(instanceId, runTime, "Some log message");
-        _repository.setStatus(instanceId, state, "Hello world", null,
+        _repository.addLogEntry(runId, runTime, "Some log message");
+        _repository.setStatus(runId, state, "Hello world", null,
                 runTime.atZone(ZoneId.systemDefault()).toInstant());
     }
 }

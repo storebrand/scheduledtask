@@ -138,7 +138,7 @@ public interface ScheduledTask {
     /**
      * Retrieve a specific {@link ScheduleRunContext}
      */
-    ScheduleRunContext getInstance(String instanceId);
+    ScheduleRunContext getInstance(long runId);
 
     /**
      * Criticality defines four levels that signals how important a scheduled task is, and can be used in monitoring systems

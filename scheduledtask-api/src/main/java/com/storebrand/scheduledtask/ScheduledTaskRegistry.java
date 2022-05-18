@@ -120,15 +120,17 @@ public interface ScheduledTaskRegistry {
      * The context for a specific run of a {@link ScheduledTask}.
      */
     interface ScheduleRunContext {
+        long getRunId();
+
         /**
-         * Schedule name of this run
+         * Schedule name of this run.
          */
         String getScheduledName();
 
         /**
-         * Unique id identifying this run
+         * Name of the host that this run runs on.
          */
-        String instanceId();
+        String getHostname();
 
         /**
          * Retrieve the {@link ScheduledTask} responsible for this run.
@@ -263,9 +265,14 @@ public interface ScheduledTaskRegistry {
      */
     interface LogEntry {
         /**
-         * The instance ID that this log entry is attached to.
+         * ID for this specific log message.
          */
-        String getInstanceId();
+        long getLogId();
+
+        /**
+         * The run ID that this log entry is attached to.
+         */
+        long getRunId();
 
         /**
          * The log message.

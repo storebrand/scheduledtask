@@ -22,7 +22,6 @@ import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleStatus;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
-import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl.MasterLockKeeper;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
@@ -38,9 +37,14 @@ class ScheduledTaskRunner implements ScheduledTask {
     private static final long SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
 
     private final ScheduledTaskConfig _config;
+    private final ScheduledTaskRegistry _scheduledTaskRegistry;
+    private final ScheduledTaskRepository _scheduledTaskRepository;
+    private final Clock _clock;
+    private final boolean _testMode;
     private Thread _runner;
     private final ScheduleRunnable _runnable;
     private final CronExpression _defaultCronExpression;
+    private final Object _syncObject = new Object();
     private volatile CronExpression _overrideExpression;
     private volatile Instant _nextRun;
     private volatile Instant _currentRunStarted;
@@ -50,24 +54,31 @@ class ScheduledTaskRunner implements ScheduledTask {
     private volatile boolean _runFlag = true;
     private volatile boolean _isRunning = false;
     private volatile boolean _runOnce = false;
-    private final Object _syncObject = new Object();
-    private final MasterLockKeeper _masterLockKeeper;
-    private final ScheduledTaskRepository _scheduledTaskRepository;
-    private final Clock _clock;
 
     ScheduledTaskRunner(ScheduledTaskConfig config, ScheduleRunnable runnable,
-            MasterLockKeeper masterLockKeeper, ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
+            ScheduledTaskRegistry scheduledTaskRegistry, ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
         _config = config;
         _runnable = runnable;
         _defaultCronExpression = CronExpression.parse(config.getCronExpression());
-        _masterLockKeeper = masterLockKeeper;
+        _scheduledTaskRegistry = scheduledTaskRegistry;
         _scheduledTaskRepository = scheduledTaskRepository;
         _clock = clock;
         log.info("Starting Thread '" + config.getName()
                 + "' with the cronExpression '" + config.getCronExpression() + "'.");
         _runner = new Thread(this::runner,
                 "ScheduledTask thread '" + config.getName() + "'");
-        _runner.start();
+
+        // :: Determine if we are running in test mode
+        // If the scheduled task registry is in a special test mode then we don't start the thread runner, but instead
+        // enable a special mode where we only run tasks by calling runNow().
+        _testMode = (_scheduledTaskRegistry instanceof ScheduledTaskRegistryImpl) &&
+                ((ScheduledTaskRegistryImpl)_scheduledTaskRegistry).isTestMode();
+
+        // ?: Are we in test mode?
+        if (!_testMode) {
+            // -> No, good - start the runner.
+            _runner.start();
+        }
     }
 
     @SuppressWarnings({ "checkstyle:IllegalCatch", "MethodLength", "PMD.AvoidBranchingStatementAsLastInLoop" })
@@ -80,7 +91,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                 while (_runFlag) {
                     // get the next run from the db:
                     Optional<Schedule> scheduleFromDb = _scheduledTaskRepository.getSchedule(getName());
-                    if (!scheduleFromDb.isPresent()) {
+                    if (scheduleFromDb.isEmpty()) {
                         throw new RuntimeException("Schedule with name '" + getName() + " was not found'");
                     }
 
@@ -92,7 +103,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                             .orElse(null);
 
                     // ?: Are we the master node
-                    if (_masterLockKeeper.isMaster()) {
+                    if (_scheduledTaskRegistry.hasMasterLock()) {
                         // -> Yes, we are master and should only sleep if we are still waiting for the nextRun.
                         if (Instant.now(_clock).isBefore(_nextRun)) {
                             // -> No, we have not yet passed the next run so we should sleep a bit
@@ -136,8 +147,9 @@ class ScheduledTaskRunner implements ScheduledTask {
                         break NEXTRUN;
                     }
 
-                    // ?: Are we master
-                    if (!_masterLockKeeper.isMaster()) {
+                    // ?: Are we master?
+                    if (!_scheduledTaskRegistry.hasMasterLock()) {
+                        // -> No, not master at the moment.
                         Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
 
                         log.info("Thread '" + ScheduledTaskRunner.this.getName()
@@ -210,50 +222,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                 // ----- We have not updated the cronExpression or the cronExpression is updated to be before the
                 // previous set one. In any regards we have passed the moment where the schedule should run and we
                 // have verified that we should not stop/skip the schedule
-                log.info("Thread '" + ScheduledTaskRunner.this.getName()
-                        + "' is beginning to do the run according "
-                        + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
-                _currentRunStarted = Instant.now(_clock);
-                ScheduleRunContext ctx = new ScheduledTaskRunnerContext(ScheduledTaskRunner.this,
-                        createInstanceId(), _scheduledTaskRepository, _clock, _currentRunStarted);
-                _scheduledTaskRepository.addScheduleRun(getName(), ctx.instanceId(),
-                        _currentRunStarted, "Schedule run starting.");
-
-                // ?: Is this schedule manually triggered? Ie set to run once.
-                if (ScheduledTaskRunner.this._runOnce) {
-                    // -> Yes, this where set to run once and is manually triggered. so add a log line.
-                    // note, this is named runNow in the gui but runOnce in the db so we use the term used
-                    // in gui for the logging.
-                    ctx.log("Manually started");
-                }
-
-                // :: Try to run the code that the user wants, log if it fails.
-                try {
-                    ScheduleStatus status = _runnable.run(ctx);
-                    if (!(status instanceof ScheduleStatusValidResponse)) {
-                        throw new IllegalArgumentException("The ScheduleRunContext returned a invalid ScheduleStatus,"
-                                + " make sure you are using done(), failed() or dispatched()");
-                    }
-                }
-                catch (Throwable t) {
-                    // Oh no, the schedule we set to run failed, we should log this and continue
-                    // on the normal schedule loop
-                    String message = "Schedule '" + getName() + " run failed due to an error.' ";
-                    log.info(message);
-                    ctx.failed(message, t);
-                }
-                _lastRunCompleted = Instant.now(_clock);
-
-                _isRunning = false;
-                Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
-                log.info("Thread '" + ScheduledTaskRunner.this.getName() + "' "
-                        + " instanceId '" + ctx.instanceId() + "' "
-                        + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
-                        + "ms to run. Setting next run to '" + nextRun + "', "
-                        + "using CronExpression '" + getActiveCronExpressionInternal() + "'");
-
-
-                _scheduledTaskRepository.updateNextRun(getName(), getOverrideExpressionAsString(), nextRun);
+                runTask();
 
                 // :: Execute retention policy
                 // TODO: Only execute at given intervals?
@@ -289,14 +258,54 @@ class ScheduledTaskRunner implements ScheduledTask {
         log.info("Thread '" + ScheduledTaskRunner.this.getName() + "' asked to exit, shutting down!");
     }
 
-
     /**
-     * Responsible of creating a unique runId for a given run.
+     * Actually runs the task, and logs if it fails.
      */
-    private String createInstanceId() {
-        return _currentRunStarted
-                + "-" + getName()
-                + "-" + Host.getLocalHostName();
+    private void runTask() {
+        log.info("Thread '" + ScheduledTaskRunner.this.getName()
+                + "' is beginning to do the run according "
+                + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
+        _currentRunStarted = Instant.now(_clock);
+        long id = _scheduledTaskRepository.addScheduleRun(getName(), Host.getLocalHostName(),
+                _currentRunStarted, "Schedule run starting.");
+        ScheduleRunContext ctx = new ScheduledTaskRunnerContext(id, ScheduledTaskRunner.this,
+                Host.getLocalHostName(), _scheduledTaskRepository, _clock, _currentRunStarted);
+
+
+        // ?: Is this schedule manually triggered? Ie set to run once.
+        if (ScheduledTaskRunner.this._runOnce) {
+            // -> Yes, this where set to run once and is manually triggered. so add a log line.
+            // note, this is named runNow in the gui but runOnce in the db so we use the term used
+            // in gui for the logging.
+            ctx.log("Manually started");
+        }
+
+        // :: Try to run the code that the user wants, log if it fails.
+        try {
+            ScheduleStatus status = _runnable.run(ctx);
+            if (!(status instanceof ScheduleStatusValidResponse)) {
+                throw new IllegalArgumentException("The ScheduleRunContext returned a invalid ScheduleStatus,"
+                        + " make sure you are using done(), failed() or dispatched()");
+            }
+        }
+        catch (Throwable t) {
+            // Oh no, the schedule we set to run failed, we should log this and continue
+            // on the normal schedule loop
+            String message = "Schedule '" + getName() + " run failed due to an error.' ";
+            log.info(message);
+            ctx.failed(message, t);
+        }
+        _lastRunCompleted = Instant.now(_clock);
+
+        _isRunning = false;
+        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
+        log.info("Thread '" + ScheduledTaskRunner.this.getName() + "' "
+                + " runId '" + ctx.getRunId() + "' "
+                + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
+                + "ms to run. Setting next run to '" + nextRun + "', "
+                + "using CronExpression '" + getActiveCronExpressionInternal() + "'");
+
+        _scheduledTaskRepository.updateNextRun(getName(), getOverrideExpressionAsString(), nextRun);
     }
 
     /**
@@ -434,7 +443,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     public boolean isOverdue() {
         Optional<Long> runTime = runTimeInMinutes();
         // ?: Did we get any runtime?
-        if (!runTime.isPresent()) {
+        if (runTime.isEmpty()) {
             // -> No, so it is not overdue
             return false;
         }
@@ -467,17 +476,17 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     @Override
-    public ScheduleRunContext getInstance(String instanceId) {
-        Optional<ScheduledRunDto> scheduleRun = _scheduledTaskRepository.getScheduleRun(instanceId);
+    public ScheduleRunContext getInstance(long runId) {
+        Optional<ScheduledRunDto> scheduleRun = _scheduledTaskRepository.getScheduleRun(runId);
 
         // ?: Did we find the instance?
-        if (scheduleRun.isPresent()) {
-            // -> yes we found the schedule run
-            return new ScheduledTaskRunnerContext(_scheduledTaskRepository.getScheduleRun(instanceId).get(),
-                    this, _scheduledTaskRepository, _clock);
-        }
+        return scheduleRun
+                // -> yes we found the schedule run
+                .map(scheduledRunDto ->
+                        new ScheduledTaskRunnerContext(scheduledRunDto, this, _scheduledTaskRepository, _clock))
+                // -> No, just return null
+                .orElse(null);
 
-        return null;
     }
 
     /**
@@ -545,6 +554,15 @@ class ScheduledTaskRunner implements ScheduledTask {
      */
     @Override
     public void runNow() {
+        // ?: Are we in special test mode?
+        if (_testMode) {
+            // -> Yes, then we just run the task, and return.
+            log.info("Running task [" + getName() + "] explicitly in test mode"
+                    + " - this should never happen unless we are inside a test.");
+            runTask();
+            return;
+        }
+
         // Write to db we should run this schedule now regardless of the cronExpression
         _scheduledTaskRepository.setRunOnce(getName(), true);
         // Then wake the tread so it is aware that we should run now once
@@ -563,20 +581,22 @@ class ScheduledTaskRunner implements ScheduledTask {
     private static class ScheduledTaskRunnerContext implements ScheduleRunContext {
         private final ScheduledTaskRunner _storebrandSchedule;
         private final ScheduledTaskRepository _scheduledTaskRepository;
+        private final long _runId;
         private final Clock _clock;
-        private final String _instanceId;
+        private final String _hostname;
         private final ScheduledRunDto _scheduledRunDto;
 
         /**
          * Create a new {@link ScheduleRunContext}, IE a brand new run.
          */
-        private ScheduledTaskRunnerContext(ScheduledTaskRunner storebrandSchedule, String instanceId,
+        private ScheduledTaskRunnerContext(long runId, ScheduledTaskRunner storebrandSchedule, String hostname,
                 ScheduledTaskRepository scheduledTaskRepository, Clock clock, Instant runStart) {
+            _runId = runId;
             _storebrandSchedule = storebrandSchedule;
             _clock = clock;
-            _instanceId = instanceId;
+            _hostname = hostname;
             _scheduledTaskRepository = scheduledTaskRepository;
-            _scheduledRunDto = ScheduledRunDto.newWithStateStarted(storebrandSchedule.getName(), instanceId, runStart);
+            _scheduledRunDto = ScheduledRunDto.newWithStateStarted(_runId, storebrandSchedule.getName(), hostname, runStart);
         }
 
         /**
@@ -585,13 +605,18 @@ class ScheduledTaskRunner implements ScheduledTask {
          */
         private ScheduledTaskRunnerContext(ScheduledRunDto scheduledRunDto, ScheduledTaskRunner storebrandSchedule,
                 ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
+            _runId = scheduledRunDto.getRunId();
             _storebrandSchedule = storebrandSchedule;
             _clock = clock;
             _scheduledTaskRepository = scheduledTaskRepository;
-            _instanceId = scheduledRunDto.getInstanceId();
+            _hostname = scheduledRunDto.getHostname();
             _scheduledRunDto = scheduledRunDto;
         }
 
+        @Override
+        public long getRunId() {
+            return _runId;
+        }
 
         @Override
         public String getScheduledName() {
@@ -599,8 +624,8 @@ class ScheduledTaskRunner implements ScheduledTask {
         }
 
         @Override
-        public String instanceId() {
-            return _instanceId;
+        public String getHostname() {
+            return _hostname;
         }
 
         @Override
@@ -643,17 +668,17 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         @Override
         public List<LogEntry> getLogEntries() {
-            return _scheduledTaskRepository.getLogEntries(_instanceId);
+            return _scheduledTaskRepository.getLogEntries(_runId);
         }
 
         @Override
         public void log(String msg) {
-            _scheduledTaskRepository.addLogEntry(_instanceId, LocalDateTime.now(_clock), msg);
+            _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg);
         }
 
         @Override
         public void log(String msg, Throwable throwable) {
-            _scheduledTaskRepository.addLogEntry(_instanceId, LocalDateTime.now(_clock), msg,
+            _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg,
                     throwableToStackTraceString(throwable));
         }
 

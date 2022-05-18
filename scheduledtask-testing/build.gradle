@@ -1,12 +1,5 @@
 dependencies {
-    api project(':scheduledtask-api')
-    api project(':scheduledtask-annotation')
-
-    implementation project(':scheduledtask-core')
-    implementation project(':scheduledtask-db-sql')
-
-    implementation "org.springframework:spring-context:$springVersion"
-    implementation "javax.inject:javax.inject:$javaxInjectVersion"
+    implementation project(':scheduledtask-api')
 
     // The SFL4J API. Since you should provide the SLF4J implementation yourself, we use compileOnly.
     compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
@@ -14,10 +7,6 @@ dependencies {
     // Testing
     testImplementation(platform("org.junit:junit-bom:$junitVersion"))
     testImplementation('org.junit.jupiter:junit-jupiter')
-
-    // JDBC and H2 database used for testing
-    testImplementation "org.springframework:spring-jdbc:$springVersion"
-    testImplementation 'com.h2database:h2:1.4.200'
 
     // Placing logback-classic on testCompile path as we need some form of logging implementation.
     //testImplementation "org.slf4j:slf4j-api:$slf4jVersion"

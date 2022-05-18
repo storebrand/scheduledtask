@@ -8,6 +8,7 @@ import java.sql.JDBCType;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -223,25 +224,29 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public boolean addScheduleRun(String scheduleName, String instanceId, Instant runStart, String statusMsg) {
+    public long addScheduleRun(String scheduleName, String hostname, Instant runStart, String statusMsg) {
         String sql = "INSERT INTO " + SCHEDULE_RUN_TABLE
-                + " (instance_id, schedule_name, status, status_msg, run_start, status_time) "
-                + " SELECT ?, ?, ?, ?, ?, ? "
-                + " WHERE NOT EXISTS (SELECT instance_id FROM " + SCHEDULE_RUN_TABLE
-                + " WHERE instance_id = ?)";
+                + " (schedule_name, hostname, status, status_msg, run_start, status_time) "
+                + " VALUES (?, ?, ?, ?, ?, ?)";
 
-        log.debug("Adding scheduleRun for scheuleName [" + scheduleName + "], instanceId [" + instanceId + "]");
+        log.debug("Adding scheduleRun for scheuleName [" + scheduleName + "]");
 
         try (Connection sqlConnection = _dataSource.getConnection();
-             PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, instanceId);
-            pStmt.setString(2, scheduleName);
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            pStmt.setString(1, scheduleName);
+            pStmt.setString(2, hostname);
             pStmt.setString(3, ScheduledTaskRegistry.State.STARTED.toString());
             pStmt.setString(4, statusMsg);
             pStmt.setTimestamp(5, Timestamp.from(runStart));
             pStmt.setTimestamp(6, Timestamp.from(_clock.instant()));
-            pStmt.setString(7, instanceId);
-            return pStmt.executeUpdate() == 1;
+            pStmt.execute();
+            try (ResultSet rs = pStmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+            throw new IllegalStateException("Unable to determine runId for new scheduleRun for scheduleName ["
+                    + scheduleName + "]");
         }
         catch (SQLException e) {
             throw new RuntimeException(e);
@@ -250,11 +255,11 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public boolean setStatus(String instanceId, State state, String statusMsg, String statusStackTrace,
+    public boolean setStatus(long runId, State state, String statusMsg, String statusStackTrace,
             Instant statusTime) {
         String sql = "UPDATE " + SCHEDULE_RUN_TABLE
                 + " SET status = ?, status_msg = ?, status_stacktrace = ?, status_time = ? "
-                + " WHERE instance_id = ?";
+                + " WHERE run_id = ?";
 
         if (state.equals(ScheduledTaskRegistry.State.STARTED)) {
             throw new IllegalArgumentException("The state STARTED can only be set during the addScheduleRun");
@@ -269,7 +274,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             pStmt.setString(2, statusMsg);
             pStmt.setString(3, statusStackTrace);
             pStmt.setTimestamp(4, Timestamp.from(statusTime));
-            pStmt.setString(5, instanceId);
+            pStmt.setLong(5, runId);
             return pStmt.executeUpdate() == 1;
         }
         catch (SQLException e) {
@@ -279,7 +284,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     public boolean setStatus(ScheduledRunDto scheduledRunDto) {
-        return setStatus(scheduledRunDto.getInstanceId(), scheduledRunDto.getStatus(), scheduledRunDto.getStatusMsg(),
+        return setStatus(scheduledRunDto.getRunId(), scheduledRunDto.getStatus(), scheduledRunDto.getStatusMsg(),
                 scheduledRunDto.getStatusStackTrace(), scheduledRunDto.getStatusInstant());
     }
 
@@ -287,32 +292,24 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
      * Get the specific {@link ScheduledRunDbo} with the specified instanceId
      * <p>
      * Used by tests
-     * @param instanceId
-     *         - The instanceId to retrieve the scheduled run for.
+     * @param runId
+     *         - The runId to retrieve the scheduled run for.
      */
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    Optional<ScheduledRunDbo> getScheduleRunWithLogs(String instanceId) {
+    Optional<ScheduledRunDbo> getScheduleRunWithLogs(long runId) {
         String sql = "SELECT * FROM " + SCHEDULE_RUN_TABLE
-                + " WHERE instance_id = ? ";
+                + " WHERE run_id = ? ";
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, instanceId);
+            pStmt.setLong(1, runId);
 
             // First get the logEntries for this instance:
-            List<LogEntry> logEntries = getLogEntries(instanceId);
+            List<LogEntry> logEntries = getLogEntries(runId);
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
                 if (result.next()) {
                     // -> Yes we found the first row
-                    return Optional.of(new ScheduledRunDbo(
-                            result.getString("schedule_name"),
-                            result.getString("instance_id"),
-                            result.getString("status"),
-                            result.getString("status_msg"),
-                            result.getString("status_stacktrace"),
-                            result.getTimestamp("run_start"),
-                            result.getTimestamp("status_time"),
-                            logEntries));
+                    return Optional.of(fromResultSet(result, logEntries));
                 }
 
                 // E-> No, we did not find anything
@@ -326,27 +323,18 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public Optional<ScheduledRunDto> getScheduleRun(String instanceId) {
+    public Optional<ScheduledRunDto> getScheduleRun(long runId) {
         String sql = "SELECT * FROM " + SCHEDULE_RUN_TABLE
-                + " WHERE instance_id = ? ";
+                + " WHERE run_id = ? ";
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, instanceId);
+            pStmt.setLong(1, runId);
 
             try (ResultSet result = pStmt.executeQuery()) {
                 // ?: Did we find any row?
                 if (result.next()) {
                     // -> Yes we found the first row
-                    ScheduledRunDbo scheduledRun = new ScheduledRunDbo(
-                            result.getString("schedule_name"),
-                            result.getString("instance_id"),
-                            result.getString("status"),
-                            result.getString("status_msg"),
-                            result.getString("status_stacktrace"),
-                            result.getTimestamp("run_start"),
-                            result.getTimestamp("status_time"),
-                            Collections.emptyList());
-                    return Optional.of(fromDbo(scheduledRun));
+                    return Optional.of(fromDbo(fromResultSet(result, List.of())));
                 }
 
                 // E-> No, we did not find anything
@@ -374,16 +362,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 // ?: Did we find any row (we should only find one row)?
                 if (result.next()) {
                     // -> Yes we found the first row
-                    ScheduledRunDbo scheduleRunDbo = new ScheduledRunDbo(
-                            result.getString("schedule_name"),
-                            result.getString("instance_id"),
-                            result.getString("status"),
-                            result.getString("status_msg"),
-                            result.getString("status_stacktrace"),
-                            result.getTimestamp("run_start"),
-                            result.getTimestamp("status_time"),
-                            Collections.emptyList());
-                    return Optional.of(fromDbo(scheduleRunDbo));
+                    return Optional.of(fromDbo(fromResultSet(result, List.of())));
                 }
 
                 // E-> No, we did not find anything
@@ -413,15 +392,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             List<ScheduledRunDbo> scheduledRuns = new ArrayList<>();
 
             while (result.next()) {
-                ScheduledRunDbo scheduledRun = new ScheduledRunDbo(
-                        result.getString("schedule_name"),
-                        result.getString("instance_id"),
-                        result.getString("status"),
-                        result.getString("status_msg"),
-                        result.getString("status_stacktrace"),
-                        result.getTimestamp("run_start"),
-                        result.getTimestamp("status_time"),
-                        Collections.emptyList());
+                ScheduledRunDbo scheduledRun = fromResultSet(result, List.of());
                 scheduledRuns.add(scheduledRun);
             }
 
@@ -453,15 +424,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 List<ScheduledRunDbo> scheduledRuns = new ArrayList<>();
 
                 while (result.next()) {
-                    ScheduledRunDbo scheduledRun = new ScheduledRunDbo(
-                            result.getString("schedule_name"),
-                            result.getString("instance_id"),
-                            result.getString("status"),
-                            result.getString("status_msg"),
-                            result.getString("status_stacktrace"),
-                            result.getTimestamp("run_start"),
-                            result.getTimestamp("status_time"),
-                            Collections.emptyList());
+                    ScheduledRunDbo scheduledRun = fromResultSet(result, List.of());
                     scheduledRuns.add(scheduledRun);
                 }
 
@@ -477,18 +440,18 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public void addLogEntry(String instanceId, LocalDateTime logTime, String message, String stackTrace) {
+    public void addLogEntry(long runId, LocalDateTime logTime, String message, String stackTrace) {
         String sql = "INSERT INTO " + SCHEDULE_LOG_ENTRY_TABLE
-                + " (instance_id, log_msg, log_stacktrace, log_time) "
+                + " (run_id, log_msg, log_stacktrace, log_time) "
                 + " VALUES (?, ?, ?, ?)";
 
-        log.debug("Adding logEntry for instanceId [" + instanceId + "], "
+        log.debug("Adding logEntry for runId [" + runId + "], "
                 + "logMsg [" + message + "], stack trace set [" + (stackTrace != null) + "]");
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
 
-            pStmt.setString(1, instanceId);
+            pStmt.setLong(1, runId);
             pStmt.setString(2, message);
             pStmt.setString(3, stackTrace);
             pStmt.setTimestamp(4, Timestamp.valueOf(logTime));
@@ -501,20 +464,21 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public List<LogEntry> getLogEntries(String instanceId) {
+    public List<LogEntry> getLogEntries(long runId) {
         String sql = "SELECT * FROM " + SCHEDULE_LOG_ENTRY_TABLE
-                + " WHERE instance_id = ? "
+                + " WHERE run_id = ? "
                 + " ORDER BY log_time ASC ";
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, instanceId);
+            pStmt.setLong(1, runId);
 
             List<LogEntry> logEntries = new ArrayList<>();
             try (ResultSet result = pStmt.executeQuery()) {
                 while (result.next()) {
                     // -> Yes we found the first row
                     LogEntryDbo logEntry = new LogEntryDbo(
-                            result.getString("instance_id"),
+                            result.getLong("log_id"),
+                            result.getLong("run_id"),
                             result.getString("log_msg"),
                             result.getString("log_stacktrace"),
                             result.getTimestamp("log_time"));
@@ -527,6 +491,19 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         catch (SQLException throwables) {
             throw new RuntimeException(throwables);
         }
+    }
+
+    private ScheduledRunDbo fromResultSet(ResultSet result, List<LogEntry> logEntries) throws SQLException {
+        return new ScheduledRunDbo(
+                result.getLong("run_id"),
+                result.getString("schedule_name"),
+                result.getString("hostname"),
+                result.getString("status"),
+                result.getString("status_msg"),
+                result.getString("status_stacktrace"),
+                result.getTimestamp("run_start"),
+                result.getTimestamp("status_time"),
+                logEntries);
     }
 
     // ===== Retention policy =================================================================
@@ -675,7 +652,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         }
 
         String deleteLogs = "DELETE FROM " + SCHEDULE_LOG_ENTRY_TABLE
-                + " WHERE instance_id IN (SELECT instance_id FROM " + SCHEDULE_RUN_TABLE + where + ")";
+                + " WHERE run_id IN (SELECT run_id FROM " + SCHEDULE_RUN_TABLE + where + ")";
 
         String deleteRuns = "DELETE FROM " + SCHEDULE_RUN_TABLE
                 + where;
@@ -757,10 +734,13 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         }
 
         // :: Verify we have all the table columns and their sizes
+        inspector.validateColumn("run_id", false,
+                JDBCType.VARCHAR, JDBCType.BIGINT, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
+
         inspector.validateColumn("schedule_name", 255, false,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
-        inspector.validateColumn("instance_id", 255, false,
+        inspector.validateColumn("hostname", 255, false,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
         inspector.validateColumn("run_start", false,
@@ -797,8 +777,11 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         }
 
         // :: Verify we have all the table columns and their sizes
-        inspector.validateColumn("instance_id", 255, false,
-                JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
+        inspector.validateColumn("log_id", false,
+                JDBCType.VARCHAR, JDBCType.BIGINT, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
+
+        inspector.validateColumn("run_id", false,
+                JDBCType.VARCHAR, JDBCType.BIGINT, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
         inspector.validateColumn("log_msg", 255, false,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
@@ -820,7 +803,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     }
 
     static ScheduledRunDto fromDbo(ScheduledRunDbo dbo) {
-        return new ScheduledRunDto(dbo.getScheduleName(), dbo.getInstanceId(), dbo.getStatus(), dbo.getStatusMsg(),
+        return new ScheduledRunDto(dbo.getRunId(), dbo.getScheduleName(), dbo.getHostname(), dbo.getStatus(), dbo.getStatusMsg(),
                 dbo.getStatusThrowable(), dbo.getRunStart(), dbo.getStatusTime());
     }
 
@@ -885,8 +868,9 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
      * logs are still being appended to.
      */
     static class ScheduledRunDbo {
+        private final long runId;
         private final String scheduleName;
-        private final String instanceId;
+        private final String hostname;
         private final String status;
         private final String statusMsg;
         private final String statusThrowable;
@@ -894,10 +878,11 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         private final Timestamp statusTime;
         private final List<LogEntry> logEntries;
 
-        ScheduledRunDbo(String scheduleName, String instanceId, String status, String statusMsg,
+        ScheduledRunDbo(long runId, String scheduleName, String hostname, String status, String statusMsg,
                 String statusThrowable, Timestamp runStart, Timestamp statusTime, List<LogEntry> logEntries) {
+            this.runId = runId;
             this.scheduleName = scheduleName;
-            this.instanceId = instanceId;
+            this.hostname = hostname;
             this.status = status;
             this.statusMsg = statusMsg;
             this.statusThrowable = statusThrowable;
@@ -906,12 +891,16 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             this.logEntries = logEntries;
         }
 
+        public long getRunId() {
+            return runId;
+        }
+
         public String getScheduleName() {
             return scheduleName;
         }
 
-        public String getInstanceId() {
-            return instanceId;
+        public String getHostname() {
+            return hostname;
         }
 
         public State getStatus() {
@@ -943,21 +932,28 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
      * A log line for a given Schedule run.
      */
     static class LogEntryDbo implements LogEntry {
-        private final String _instanceId;
+        private final long _logId;
+        private final long _runId;
         private final String _message;
         private final String _stackTrace;
         private final LocalDateTime _logTime;
 
-        LogEntryDbo(String instanceId, String message, String stackTrace, Timestamp logTime) {
-            this._instanceId = instanceId;
-            this._message = message;
-            this._stackTrace = stackTrace;
-            this._logTime = logTime.toLocalDateTime();
+        LogEntryDbo(long logId, long runId, String message, String stackTrace, Timestamp logTime) {
+            _logId = logId;
+            _runId = runId;
+            _message = message;
+            _stackTrace = stackTrace;
+            _logTime = logTime.toLocalDateTime();
         }
 
         @Override
-        public String getInstanceId() {
-            return _instanceId;
+        public long getLogId() {
+            return _logId;
+        }
+
+        @Override
+        public long getRunId() {
+            return _runId;
         }
 
         @Override
