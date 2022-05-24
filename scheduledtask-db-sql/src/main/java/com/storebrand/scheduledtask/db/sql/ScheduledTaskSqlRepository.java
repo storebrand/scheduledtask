@@ -99,7 +99,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         // E-> Schedule already exists so we need to update it.
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
-                + " SET schedule_name = ?, cron_expression = ?, next_run = ?, last_updated = ? "
+                + " SET cron_expression = ?, next_run = ?, last_updated = ? "
                 + " WHERE schedule_name = ?";
 
         log.info("Updating next run to [" + scheduleName + "] cronExpression [" + overrideCronExpression + "] "
@@ -107,11 +107,10 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, scheduleName);
-            pStmt.setString(2, overrideCronExpression);
-            pStmt.setTimestamp(3, Timestamp.from(nextRun));
-            pStmt.setTimestamp(4, Timestamp.from(_clock.instant()));
-            pStmt.setString(5, scheduleName);
+            pStmt.setString(1, overrideCronExpression);
+            pStmt.setTimestamp(2, Timestamp.from(nextRun));
+            pStmt.setTimestamp(3, Timestamp.from(_clock.instant()));
+            pStmt.setString(4, scheduleName);
             return pStmt.executeUpdate();
         }
         catch (SQLException e) {
@@ -123,16 +122,15 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public int setActive(String scheduleName, boolean active) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
-                + " SET schedule_name = ?, is_active = ? "
+                + " SET is_active = ? "
                 + " WHERE schedule_name = ?";
 
         log.info("Schedule [" + scheduleName + "] is now set to be isActive [" + active + "] ");
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, scheduleName);
-            pStmt.setBoolean(2, active);
-            pStmt.setString(3, scheduleName);
+            pStmt.setBoolean(1, active);
+            pStmt.setString(2, scheduleName);
             return pStmt.executeUpdate();
         }
         catch (SQLException e) {
@@ -144,16 +142,15 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public int setRunOnce(String scheduleName, boolean runOnce) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
-                + " SET schedule_name = ?, run_once = ? "
+                + " SET run_once = ? "
                 + " WHERE schedule_name = ?";
 
         log.info("Schedule [" + scheduleName + "] is now set to be isRunOnce [" + runOnce + "] ");
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, scheduleName);
-            pStmt.setBoolean(2, runOnce);
-            pStmt.setString(3, scheduleName);
+            pStmt.setBoolean(1, runOnce);
+            pStmt.setString(2, scheduleName);
             return pStmt.executeUpdate();
         }
         catch (SQLException e) {

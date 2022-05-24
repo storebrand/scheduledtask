@@ -135,7 +135,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
                 + " SET node_name = ?,lock_last_updated_time = ? "
                 + " WHERE lock_name = ? "
                 + " AND node_name = ? "
-                // (lockLastUpdated >= $now - 5 minutes)). Can only do keeplock withing 5 min after it where last updated.
+                // (lockLastUpdated >= $now - 5 minutes)). Can only do keeplock within 5 min after it was last updated.
                 + " AND lock_last_updated_time >= ?";
 
         try (Connection sqlConnection = _dataSource.getConnection();

@@ -16,6 +16,8 @@ import org.springframework.context.ApplicationContextAware;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
+import com.storebrand.scheduledtask.db.InMemoryMasterLockRepository;
+import com.storebrand.scheduledtask.db.InMemoryScheduledTaskRepository;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
 import com.storebrand.scheduledtask.db.sql.MasterLockSqlRepository;
@@ -87,22 +89,12 @@ public class ScheduledTaskRegistryFactory extends AbstractFactoryBean<ScheduledT
                 : Optional.empty();
 
         // Get MasterLockRepository from Spring context, or create a default implementation if not present.
-        MasterLockRepository masterLockRepository = _masterLockRepository.orElseGet(() -> {
-            log.info(MasterLockRepository.class.getSimpleName() + " not found in Spring context - Creating default implementation "
-                    + MasterLockSqlRepository.class.getName());
-            return new MasterLockSqlRepository(
-                    dataSource.orElseGet(() -> _applicationContext.getBean(DataSource.class)),
-                    clock);
-        });
+        MasterLockRepository masterLockRepository = _masterLockRepository
+                .orElseGet(() -> getMasterLockSqlRepository(clock, dataSource));
 
         // Get ScheduledTaskRepository from Spring context, or create a default implementation if not present.
-        ScheduledTaskRepository scheduledTaskRepository = _scheduledTaskRepository.orElseGet(() -> {
-            log.info(ScheduledTaskRepository.class.getSimpleName() + " not found in Spring context - Creating default implementation "
-                    + ScheduledTaskSqlRepository.class.getName());
-            return new ScheduledTaskSqlRepository(
-                    dataSource.orElseGet(() -> _applicationContext.getBean(DataSource.class)),
-                    clock);
-        });
+        ScheduledTaskRepository scheduledTaskRepository = _scheduledTaskRepository
+                .orElseGet(() -> getScheduledTaskSqlRepository(clock, dataSource));
 
         return new ScheduledTaskRegistryImpl(scheduledTaskRepository, masterLockRepository, clock,
                 TestModeUtil.isTestMode());
@@ -114,4 +106,36 @@ public class ScheduledTaskRegistryFactory extends AbstractFactoryBean<ScheduledT
             instance.close();
         }
     }
+
+    private MasterLockRepository getMasterLockSqlRepository(Clock clock, Optional<DataSource> dataSource) {
+        if (TestModeUtil.isTestMode()) {
+            log.info(MasterLockRepository.class.getSimpleName()
+                    + " not found in Spring context - As we are in test mode we create an in-memory implementation "
+                    + InMemoryMasterLockRepository.class);
+            return new InMemoryMasterLockRepository(clock);
+        }
+
+        log.info(MasterLockRepository.class.getSimpleName()
+                + " not found in Spring context - Creating default implementation "
+                + MasterLockSqlRepository.class.getName());
+        return new MasterLockSqlRepository(
+                dataSource.orElseGet(() -> _applicationContext.getBean(DataSource.class)),
+                clock);
+    }
+
+    private ScheduledTaskRepository getScheduledTaskSqlRepository(Clock clock, Optional<DataSource> dataSource) {
+        if (TestModeUtil.isTestMode()) {
+            log.info(ScheduledTaskRepository.class.getSimpleName()
+                    + " not found in Spring context - As we are in test mode we create an in-memory implementation "
+                    + InMemoryScheduledTaskRepository.class);
+            return new InMemoryScheduledTaskRepository(clock);
+        }
+
+        log.info(ScheduledTaskRepository.class.getSimpleName() + " not found in Spring context - Creating default implementation "
+                + ScheduledTaskSqlRepository.class.getName());
+        return new ScheduledTaskSqlRepository(
+                dataSource.orElseGet(() -> _applicationContext.getBean(DataSource.class)),
+                clock);
+    }
+
 }

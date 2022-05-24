@@ -124,7 +124,7 @@ public interface ScheduledTaskRepository {
 
     /**
      * Get the specific {@link ScheduledRunDto} with the specified instanceId. Note this does not load the logs of the
-     * schedule run. Use {@link #getLogEntries(String)} to fetch these.
+     * schedule run. Use {@link #getLogEntries(long)} to fetch these.
      *
      * @param runId
      *         - The runId to retrieve the scheduled run for.
@@ -135,7 +135,7 @@ public interface ScheduledTaskRepository {
     /**
      * Get the last inserted ScheduleRun for the given scheduleName.
      * <p>
-     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(String)} to fetch these.
+     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(long)} to fetch these.
      *
      * @param scheduleName
      *         - Name of the schedule to retrieve the last run from
@@ -146,13 +146,13 @@ public interface ScheduledTaskRepository {
      * Retrieves all the last {@link ScheduledRunDto} for all schedule names. The results are sorted by {@link
      * ScheduledRunDto#getRunStart()} descending.
      * <p>
-     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(String)} to fetch these.
+     * Note this does not load the logs of the schedule run. Use {@link #getLogEntries(long)} to fetch these.
      */
     List<ScheduledRunDto> getLastScheduleRuns();
 
     /**
      * Get all {@link ScheduledRunDto} between a given timespan. Note this does not load the logs of the schedule run.
-     * Use {@link #getLogEntries(String)} to fetch these.
+     * Use {@link #getLogEntries(long)} to fetch these.
      *
      * @param from
      *         - from time and including

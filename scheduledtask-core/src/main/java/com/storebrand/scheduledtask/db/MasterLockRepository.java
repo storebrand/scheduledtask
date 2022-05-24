@@ -44,10 +44,10 @@ public interface MasterLockRepository {
      * long as it needs.
      *
      * @param lockName
-     *         - Name of the lock that it should attempt to aquire.
+     *         - Name of the lock that it should attempt to acquire.
      * @param nodeName
      *         - Host name of the server that should keep the lock.
-     * @return - 1 if the lock where aquired. 0 if it did not manage to aquire the lock.
+     * @return - true if the lock where acquired. false if it did not manage to acquire the lock.
      */
     boolean tryAcquireLock(String lockName, String nodeName);
 
