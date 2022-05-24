@@ -224,7 +224,7 @@ class TableInspector {
             // Loop through all columns an extract the sugar
             while (columns.next()) {
                 TableColumn tableColumn = new TableColumn(
-                        columns.getString("COLUMN_NAME"),
+                        columns.getString("COLUMN_NAME").toUpperCase(),
                         columns.getInt("DATA_TYPE"),
                         columns.getString("TYPE_NAME"),
                         columns.getInt("COLUMN_SIZE"),
