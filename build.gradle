@@ -39,7 +39,7 @@ subprojects {
         slf4jVersion = '1.7.36'
         junitVersion = '5.8.2'
         healthCheckVersion = '0.3.+'
-        springVersion = '5.3.18'
+        springVersion = '5.3.20'
         javaxInjectVersion = '1'
         logbackClassicVersion = '1.2.11'
     }
