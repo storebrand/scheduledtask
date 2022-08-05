@@ -8,6 +8,9 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:$junitVersion"))
     testImplementation('org.junit.jupiter:junit-jupiter')
 
+    // We need the core library for testing
+    testImplementation project(':scheduledtask-core')
+
     // Placing logback-classic on testCompile path as we need some form of logging implementation.
     //testImplementation "org.slf4j:slf4j-api:$slf4jVersion"
     testRuntimeOnly "ch.qos.logback:logback-classic:$logbackClassicVersion"
