@@ -22,6 +22,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -177,11 +178,13 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
      */
     static class MasterLockKeeper {
         private static final long MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
+        private static final long MASTER_LOCK_MAX_TIME_SINCE_LAST_UPDATE_MINUTES = 5;
 
         private Thread _runner;
         private final Clock _clock;
         /* .. state vars .. */
         private volatile boolean _isMaster = false;
+        private volatile Instant _lastUpdated = Instant.EPOCH;
         private volatile boolean _runFlag = true;
         private volatile boolean _isInitialRun = true;
         private final Object _syncObject = new Object();
@@ -213,6 +216,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                         if (_masterLockRepository.tryAcquireLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                             // -> Yes, we managed to acquire the lock
                             _isMaster = true;
+                            _lastUpdated = Instant.now(_clock);
                             log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                     + " with nodeName '" + Host.getLocalHostName() + "' "
                                     + "managed to acquire the lock during the initial run");
@@ -234,6 +238,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                     if (_masterLockRepository.keepLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                         // -> Yes, we managed to keep the master lock, go to sleep
                         _isMaster = true;
+                        _lastUpdated = Instant.now(_clock);
                         log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                 + " with nodeName '" + Host.getLocalHostName() + "' "
                                 + "managed to keep the lock.");
@@ -246,6 +251,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                     if (_masterLockRepository.tryAcquireLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                         // -> Yes, we managed to acquire the lock
                         _isMaster = true;
+                        _lastUpdated = Instant.now(_clock);
                         log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                 + " with nodeName '" + Host.getLocalHostName() + "' "
                                 + "managed to acquire the lock!");
@@ -258,13 +264,20 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                     // ----- We where not able to keep the lock and not able to acquire the lock so we are not master,
                     // but we should regardless of this do a new sleep cycle after we mark us as not the master
                     _isMaster = false;
+                    _lastUpdated = Instant.now(_clock);
                     log.debug("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                             + " with nodeName '" + Host.getLocalHostName() + "' "
                             + "is not master.");
                     continue SLEEP_LOOP;
                 }
                 catch (InterruptedException e) {
-                    log.debug("MasterLock on node '" + Host.getLocalHostName() + "' sleep where interrupted");
+                    log.info("MasterLock on node '" + Host.getLocalHostName() + "' sleep where interrupted."
+                            + " Will loop and check run flag.");
+                }
+                catch (Throwable e) {
+                    // We need to catch any and all exceptions thrown, so we ensure that the thread does not die on us.
+                    log.error("Thread MasterLock '" + MASTER_LOCK_NAME
+                            + "' failed with an exception. Will loop and try again.", e);
                 }
             }
             // Exiting loop, so clear the runner thread and log that we are now shutting down.
@@ -274,8 +287,13 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                     + "asked to exit, shutting down!");
         }
 
+        /**
+         * We are only Master if both {@link #_isMaster} is true, and we were last updated less than
+         * {@link #MASTER_LOCK_MAX_TIME_SINCE_LAST_UPDATE_MINUTES} minutes ago.
+         */
         public boolean isMaster() {
-            return _isMaster;
+            return _isMaster && _lastUpdated.isAfter(
+                    Instant.now(_clock).minus(MASTER_LOCK_MAX_TIME_SINCE_LAST_UPDATE_MINUTES, ChronoUnit.MINUTES));
         }
 
         Optional<MasterLock> getMasterLock() {

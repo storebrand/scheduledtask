@@ -394,6 +394,8 @@ public class InMemoryMasterLockRepositoryTest {
      * First node releases the lock, and the second node then acquires it
      */
     @Test
+    @SuppressFBWarnings(value = "RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT",
+            justification = "We don't need to check values in the setup of the test")
     public void firstNodeReleasesLock_ok() {
         // :: Setup
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
@@ -424,6 +426,8 @@ public class InMemoryMasterLockRepositoryTest {
     }
 
     @Test
+    @SuppressFBWarnings(value = "RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT",
+            justification = "We don't need to check values in the setup of the test")
     public void secondNodeShouldNotBeAllowedToReleaseNode1Lock_fail() {
         // :: Setup
         Instant initiallyAcquired = LocalDateTime.of(2021, 2, 28, 13, 20)
