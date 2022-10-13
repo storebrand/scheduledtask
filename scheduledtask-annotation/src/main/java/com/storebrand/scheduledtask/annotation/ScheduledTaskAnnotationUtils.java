@@ -97,7 +97,7 @@ public class ScheduledTaskAnnotationUtils {
                 }
                 catch (IllegalAccessException | InvocationTargetException e) {
                     throw new RuntimeException("Unable to invoke method " + method.getName() + " on class "
-                            + method.getDeclaringClass().getName());
+                            + method.getDeclaringClass().getName(), e);
                 }
             })
                     .maxExpectedMinutesToRun(annotation.maxExpectedMinutesToRun())
