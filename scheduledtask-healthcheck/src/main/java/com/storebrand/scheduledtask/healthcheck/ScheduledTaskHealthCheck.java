@@ -92,15 +92,18 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
      * Health check specification for a check that checks what service has the lock, or if any has it at all.
      */
     public void masterLockHealthCheck(CheckSpecification spec) {
-        spec.dynamicText(context -> "Running node has the master lock: " + (_scheduledTaskRegistry.hasMasterLock() ? "yes" : "no"));
+        spec.dynamicText(context -> "This node has the master lock: " + (_scheduledTaskRegistry.hasMasterLock() ? "yes" : "no"));
         // :: Get the status from the db on who has the lock
         spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_PARTIAL, context -> {
             Optional<MasterLock> masterLock = _scheduledTaskRegistry.getMasterLock();
-            // ?: Is the lock yet unclaimed?
-            if (!masterLock.isPresent()) {
-                // -> Yes, nobody has the lock. This means this node is just starting and have not managed
-                // to claim the lock on the first run yet.
-                return context.ok("Unclaimed lock");
+            // ?: Is the lock present in the database?
+            if (masterLock.isEmpty()) {
+                // -> No, the lock row is not present. This is an unexpected situation. A lock row will only be missing
+                // for a very short time during the first time scheduled tasks are introduced. The lock row should
+                // never be removed from the database after first being created.
+                return context.fault("The row for the lock is missing from the database.\n"
+                        + "This is an unexpected situation, as we expect the row to always exist in the database.\n"
+                        + "No-one currently has the lock, and until the row is back no-one can take the lock.");
             }
 
             // ?: We have a lock but it may be old
