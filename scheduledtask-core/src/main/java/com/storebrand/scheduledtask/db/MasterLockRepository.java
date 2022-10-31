@@ -43,6 +43,12 @@ import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 public interface MasterLockRepository {
 
     /**
+     * Node name used to create a lock for a non-existing node. This is used to recreate a missing lock, when we don't
+     * know who had the lock before.
+     */
+    String NON_EXISTING_NODE = "NON-EXISTING-NODE";
+
+    /**
      * Will create a master lock if it does not exists. The lock will be created with the lockTakenTime and
      * lockLastUpdateTime to {@link Instant#EPOCH} so all nodes can try to acquire it.
      *
@@ -53,6 +59,17 @@ public interface MasterLockRepository {
      * @return - true if a new lock was created.
      */
     boolean tryCreateLock(String lockName, String nodeName);
+
+    /**
+     * Will try to create a missing lock. The lock will be created for a node named {@link #NON_EXISTING_NODE}, so no
+     * one can take the lock before 10 minutes has passed. This is to ensure whoever had the lock before it disappeared
+     * have enough time to realize that they don't have the lock.
+     *
+     * @param lockName
+     *         - Name of the lock to be inserted.
+     * @return - true if a new lock was created.
+     */
+    boolean tryCreateMissingLock(String lockName);
 
     /**
      * Tries to acquire the master lock. If this manages to update the lock_name it will mean this host has the lock for

@@ -59,6 +59,19 @@ public class InMemoryMasterLockRepository implements MasterLockRepository {
     }
 
     @Override
+    public boolean tryCreateMissingLock(String lockName) {
+        synchronized (_lockObject) {
+            if (_locks.containsKey(lockName)) {
+                return false;
+            }
+            Instant now = Instant.now(_clock);
+            InMemoryMasterLock lock = new InMemoryMasterLock(lockName, "NON-EXISTING", now, now);
+            _locks.put(lockName, lock);
+            return true;
+        }
+    }
+
+    @Override
     public boolean tryAcquireLock(String lockName, String nodeName) {
         synchronized (_lockObject) {
             InMemoryMasterLock existingLock = _locks.get(lockName);
