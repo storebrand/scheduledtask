@@ -29,6 +29,7 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -190,6 +191,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         private final Object _syncObject = new Object();
         private final MasterLockRepository _masterLockRepository;
         private final ScheduledTaskRegistryImpl _storebrandScheduleService;
+        private final AtomicInteger _notMasterCounter = new AtomicInteger();
 
         MasterLockKeeper(MasterLockRepository masterLockRepository,
                 ScheduledTaskRegistryImpl storebrandScheduleService,
@@ -198,7 +200,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
             _storebrandScheduleService = storebrandScheduleService;
             _clock = clock;
             log.info("Starting MasterLock thread");
-            _runner = new Thread(() -> MasterLockKeeper.this.runner(), "MasterLock thread");
+            _runner = new Thread(MasterLockKeeper.this::runner, "MasterLock thread");
 
             // Make sure that the master lock is created:
             _masterLockRepository.tryCreateLock(MASTER_LOCK_NAME, Host.getLocalHostName());
@@ -252,6 +254,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                         // -> Yes, we managed to acquire the lock
                         _isMaster = true;
                         _lastUpdated = Instant.now(_clock);
+                        _notMasterCounter.set(0);
                         log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                 + " with nodeName '" + Host.getLocalHostName() + "' "
                                 + "managed to acquire the lock!");
@@ -268,6 +271,9 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                     log.debug("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                             + " with nodeName '" + Host.getLocalHostName() + "' "
                             + "is not master.");
+
+                    ensureMasterLockExists();
+
                     continue SLEEP_LOOP;
                 }
                 catch (InterruptedException e) {
@@ -285,6 +291,56 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
             log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                     + " with nodeName '" + Host.getLocalHostName() + "' "
                     + "asked to exit, shutting down!");
+        }
+
+        /**
+         * The system should self-heal in case the master lock is gone from the database. This should normally never
+         * happen, but if someone deletes the row we need to recreate it. If the row is gone no nodes will be able to
+         * take the lock.
+         * <p>
+         * As an extra measure of protection against faults we will create the lock as if a non-existing node took it.
+         * This way any node that thought it might have the lock will get enough time to let go before anyone is able to
+         * pick it up.
+         */
+        private void ensureMasterLockExists() {
+            // No need to check every cycle, so we check when we have not gotten the lock in 10 attempts, and reset
+            // the counter if everything is good.
+            int notMasterCounter = _notMasterCounter.incrementAndGet();
+            if (notMasterCounter >= 10) {
+                // We have not gotten the lock in 10 attempts, so we should check if the lock has gone missing, and
+                // attempt to recreate the lock if that is the case.
+                Optional<MasterLock> optionalMasterLock = getMasterLock();
+                // ?: Is there a lock present?
+                if (optionalMasterLock.isEmpty()) {
+                    // -> No, there is no lock present, we must warn, and try to recreate it.
+                    log.warn("Detected that MasterLock '" + MASTER_LOCK_NAME + "' is missing."
+                            + " This should never happen. Attempting to recreate the missing lock.");
+                    if (_masterLockRepository.tryCreateMissingLock(MASTER_LOCK_NAME)) {
+                        log.info("Recreated missing MasterLock '" + MASTER_LOCK_NAME + "'");
+                        // We recreated the lock row. Reset counter.
+                        _notMasterCounter.set(0);
+                    }
+                    else {
+                        log.warn("Unable to recreate missing MasterLock '" + MASTER_LOCK_NAME + "'. "
+                                + "Maybe someone else created it?");
+                    }
+                    return;
+                }
+
+                // E-> A lock exists in the system. Just log a message with the current state
+
+                MasterLock masterLock = optionalMasterLock.get();
+                if (masterLock.isValid(Instant.now(_clock))) {
+                    log.info("MasterLock '" + MASTER_LOCK_NAME + "' present, and taken by node '"
+                            + masterLock.getNodeName() + "'");
+                }
+                else {
+                    log.info("MasterLock '" + MASTER_LOCK_NAME + "' not taken. Last update was by '"
+                            + masterLock.getNodeName() + "' at " + masterLock.getLockLastUpdatedTime());
+                }
+                // Lock row is present, so no need to check again for a while. Reset counter.
+                _notMasterCounter.set(0);
+            }
         }
 
         /**

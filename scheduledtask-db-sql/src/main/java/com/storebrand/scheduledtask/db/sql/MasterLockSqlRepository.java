@@ -73,26 +73,12 @@ public class MasterLockSqlRepository implements MasterLockRepository {
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean tryCreateLock(String lockName, String nodeName) {
-        String sql = "INSERT INTO " + MASTER_LOCK_TABLE
-                + " (lock_name, node_name, lock_taken_time, lock_last_updated_time) "
-                + " SELECT ?, ?, ?, ? "
-                + " WHERE NOT EXISTS (SELECT lock_name FROM " + MASTER_LOCK_TABLE
-                + " WHERE lock_name = ?)";
+        return tryCreateLockInternal(lockName, nodeName, Instant.EPOCH);
+    }
 
-        log.debug("Trying to create masterLock [" + lockName + "] on node [" + nodeName + "]");
-
-        try (Connection sqlConnection = _dataSource.getConnection();
-            PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setString(1, lockName);
-            pStmt.setString(2, nodeName);
-            pStmt.setTimestamp(3, Timestamp.from(Instant.EPOCH));
-            pStmt.setTimestamp(4, Timestamp.from(Instant.EPOCH));
-            pStmt.setString(5, lockName);
-            return pStmt.executeUpdate() == 1;
-        }
-        catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
+    @Override
+    public boolean tryCreateMissingLock(String lockName) {
+        return tryCreateLockInternal(lockName, NON_EXISTING_NODE, Instant.now(_clock));
     }
 
     @Override
@@ -218,6 +204,29 @@ public class MasterLockSqlRepository implements MasterLockRepository {
          }
         catch (SQLException throwables) {
             throw new RuntimeException(throwables);
+        }
+    }
+
+    private boolean tryCreateLockInternal(String lockName, String nodeName, Instant time) {
+        String sql = "INSERT INTO " + MASTER_LOCK_TABLE
+                + " (lock_name, node_name, lock_taken_time, lock_last_updated_time) "
+                + " SELECT ?, ?, ?, ? "
+                + " WHERE NOT EXISTS (SELECT lock_name FROM " + MASTER_LOCK_TABLE
+                + " WHERE lock_name = ?)";
+
+        log.debug("Trying to create masterLock [" + lockName + "] on node [" + nodeName + "]");
+
+        try (Connection sqlConnection = _dataSource.getConnection();
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
+            pStmt.setString(1, lockName);
+            pStmt.setString(2, nodeName);
+            pStmt.setTimestamp(3, Timestamp.from(time));
+            pStmt.setTimestamp(4, Timestamp.from(time));
+            pStmt.setString(5, lockName);
+            return pStmt.executeUpdate() == 1;
+        }
+        catch (SQLException e) {
+            throw new RuntimeException(e);
         }
     }
 

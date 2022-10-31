@@ -26,6 +26,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import javax.sql.DataSource;
@@ -493,6 +494,28 @@ public class MasterLockRepositoryTest {
         assertNotEquals(initiallyAcquired, currentLock.get().getLockLastUpdatedTime());
         assertEquals(secondAcquireTime, currentLock.get().getLockLastUpdatedTime());
         assertEquals(initiallyAcquired, currentLock.get().getLockTakenTime());
+    }
+
+    @Test
+    public void acquiringLockShouldNotBePossibleBefore10MinutesAfterCreatingMissingLock() {
+        // :: Setup
+        Instant now = LocalDateTime.of(2022, 2, 2, 2, 2, 2)
+                .atZone(ZoneId.systemDefault()).toInstant();
+        _clock.setFixedClock(now);
+        MasterLockSqlRepository repository = new MasterLockSqlRepository(_dataSource, _clock);
+
+        // :: Act
+        boolean created = repository.tryCreateMissingLock("test-lock");
+        boolean acquiredImmediately = repository.tryAcquireLock("test-lock", "test-node-1");
+
+        // Move 11 minutes ahead, so we should be able to acquire lock.
+        _clock.setFixedClock(now.plus(11, ChronoUnit.MINUTES));
+        boolean acquired11MinutesLater = repository.tryAcquireLock("test-lock", "test-node-1");
+
+        // :: Assert
+        assertTrue(created);
+        assertFalse(acquiredImmediately);
+        assertTrue(acquired11MinutesLater);
     }
 
     // ===== Helpers ==============================================================================

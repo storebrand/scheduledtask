@@ -101,9 +101,14 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
                 // -> No, the lock row is not present. This is an unexpected situation. A lock row will only be missing
                 // for a very short time during the first time scheduled tasks are introduced. The lock row should
                 // never be removed from the database after first being created.
-                return context.fault("The row for the lock is missing from the database.\n"
-                        + "This is an unexpected situation, as we expect the row to always exist in the database.\n"
-                        + "No-one currently has the lock, and until the row is back no-one can take the lock.");
+                return context
+                        .fault("The row for the lock is missing from the database.\n"
+                                + "This is an unexpected situation, as we expect the lock to always exist in the database.\n"
+                                + "No-one currently has the lock, and until the lock is back no-one can take the it.")
+                        .text("This should self-heal by itself in about 30 minutes. The reason it takes a while is\n"
+                                + "that we don't check for missing locks all the time, and we want to ensure that the node\n"
+                                + "that held the lock previously don't suddenly perform a scheduled action before it\n"
+                                + "realizes that it lost the lock.");
             }
 
             // ?: We have a lock but it may be old
