@@ -207,6 +207,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         }
     }
 
+    @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     private boolean tryCreateLockInternal(String lockName, String nodeName, Instant time) {
         String sql = "INSERT INTO " + MASTER_LOCK_TABLE
                 + " (lock_name, node_name, lock_taken_time, lock_last_updated_time) "
