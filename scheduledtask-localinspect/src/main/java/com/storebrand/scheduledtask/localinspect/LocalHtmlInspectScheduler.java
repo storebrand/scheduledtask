@@ -30,14 +30,16 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.storebrand.scheduledtask.ScheduledTask;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
-import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -272,20 +274,57 @@ public class LocalHtmlInspectScheduler {
      * </ul>
      */
     public void createSchedulesOverview(Writer out) throws IOException {
-        // Get all the schedules
-        List<MonitorScheduleDto> bindingsDtoMap = _scheduledTaskRegistry.getScheduledTasks().values().stream()
-                .map(scheduledTask -> new MonitorScheduleDto(scheduledTask))
-                .collect(toList());
+        // Get all schedules from database:
+        Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
+        // Get all the schedules from memory
+        List<MonitorScheduleDto> bindingsDtoMap = new ArrayList<>();
+        for (ScheduledTask scheduledTask : _scheduledTaskRegistry.getScheduledTasks().values()) {
+            MonitorScheduleDto scheduleDto = new MonitorScheduleDto(scheduledTask);
+            // Since the in memory can be missing some of the previous runs we need to supplement the in-memory values
+            // with data from the tables stb_schedule and stb_schedule_run
+            Schedule scheduleFromDb = allSchedulesFromDb.get(scheduledTask.getName());
+            scheduleDto.active = scheduleFromDb.isActive();
+            scheduleDto.activeCronExpression = scheduleFromDb.getOverriddenCronExpression()
+                    // Schedule is not overridden so use the default one
+                    .orElse(scheduleDto.getDefaultCronExpression());
+            scheduleDto.nextExpectedRun = scheduleFromDb.getNextRun();
+
+            // For the stats of the previous run we need to retrieve the lastRun for this schedule, so we can update
+            // the monitor status.
+            ScheduledTask schedule = _scheduledTaskRegistry.getScheduledTask(scheduledTask.getName());
+            Optional<ScheduleRunContext> lastRun = schedule.getLastScheduleRun();
+            // ?: Did we have a last run?
+            if (lastRun.isPresent()) {
+                scheduleDto.lastRunStatus = lastRun.get().getStatus();
+                // -> Yes, we have a previous run
+                scheduleDto.lastRunStarted = lastRun.get().getRunStarted().atZone(ZoneId.systemDefault()).toInstant();
+                // If last run where set to DONE we can use the statusTime to set this as "completed time"
+                if (lastRun.get().getStatus().equals(State.DONE)) {
+                    // this will also set lastRunComplete = null when a job is newly started on all nodes (even master)
+                    scheduleDto.lastRunComplete = lastRun.get().getStatusTime().atZone(ZoneId.systemDefault()).toInstant();
+                }
+            }
+
+            // :? If this is a slave node we should set Running and Overdue to N/A
+            if (!_scheduledTaskRegistry.hasMasterLock()) {
+                // -> No, we do not have the master lock so set these to null to inform this is not
+                // available.
+                scheduleDto.overdue = null;
+                scheduleDto.running = null;
+            }
+
+            bindingsDtoMap.add(scheduleDto);
+        }
 
         // Create a description informing of node that has the master lock.
-        String masterNodeDescription;
         Optional<MasterLock> masterLock = _scheduledTaskRegistry.getMasterLock();
+        String masterNodeDescription;
         // ?: did we find any lock?
         if (!masterLock.isPresent()) {
             // -> No, nobody has the lock
             masterNodeDescription = "Unclaimed lock";
         }
-        // ?: We have a lock but it may be old
+        // ?: We have a lock, but it may be old
         else if (masterLock.get().getLockLastUpdatedTime().isBefore(
                 _clock.instant().minus(5, ChronoUnit.MINUTES))) {
             // Yes-> it is an old lock
@@ -357,7 +396,7 @@ public class LocalHtmlInspectScheduler {
      * Render one row in the Scheduler table.
      */
     public void renderScheduleTableRow(Writer out, MonitorScheduleDto schedule) throws IOException {
-        out.write("<tr style=\"background-color:" + schedule.getRowColor() + "\">");
+        out.write("<tr class=\"" + schedule.getRowStyle() + "\">");
         out.write("    <td>" + schedule.getSchedulerName() + "    </td>"
                 + "    <td><b>" + schedule.isActive() + "</b></td>"
                 + "    <td>"
@@ -668,15 +707,17 @@ public class LocalHtmlInspectScheduler {
     // ===== DTOs ===================================================================================
     public static class MonitorScheduleDto {
         private final String schedulerName;
-        private final boolean active;
-        private final Instant lastRunStarted;
-        private final Instant lastRunComplete;
-        private final String activeCronExpression;
+        private boolean active;
+        private Instant lastRunStarted;
+        private Instant lastRunComplete;
+        private String activeCronExpression;
         private final String defaultCronExpression;
-        private final Instant nextExpectedRun;
+        private Instant nextExpectedRun;
         private final int maxExpectedMinutes;
-        private final boolean overdue;
-        private final boolean running;
+        private Boolean overdue;
+        private Boolean running;
+        public State lastRunStatus;
+
 
         MonitorScheduleDto(ScheduledTask scheduled) {
             this.schedulerName = scheduled.getName();
@@ -740,7 +781,7 @@ public class LocalHtmlInspectScheduler {
             }
 
             // E-> No, the current run started after the last run so we can't give a valid duration
-            return "NA";
+            return "N/A";
         }
 
         public String getNextExpectedRun() {
@@ -756,27 +797,41 @@ public class LocalHtmlInspectScheduler {
             return maxExpectedMinutes;
         }
 
-        public boolean isOverdue() {
-            return overdue;
+        public String isOverdue() {
+            return overdue != null ? String.valueOf(overdue) : "N/A";
         }
 
-        public boolean isRunning() {
-            return running;
+        public String isRunning() {
+            return running != null ? String.valueOf(running) : "N/A";
         }
 
-        public String getRowColor() {
-            // :: Set the row color. RED if the schedule is inactive, yellow if it is overdue. The inactive has priority.
+        public String getRowStyle() {
+            // :: Set the row color, blue if the schedule is inactive, yellow if it is overdue and red if the
+            // previous run failed. The inactive has priority.
             if (!active) {
-                return "red";
+                return "alert alert-info";
             }
-            // ?: Is this schedule overdue, ie it is active, is running and is overdue?
-            else if (active && overdue && running) {
-                // -> Yes, this schedule is overdue, active and running.
-                return "yellow";
+
+            // ?: Where the lastRunStatus = failed? if so we should warn about this
+            if (State.FAILED.equals(lastRunStatus)) {
+                return "alert alert-danger";
             }
-            else {
-                return "white";
+
+            // ?: should we react on the overdue and running?
+            if (overdue != null &&  running != null) {
+                // -> Yes, we should react to these flags, this means we are running on the master
+                // node.
+
+                // ?: Is this schedule overdue, ie it is active, is running and is overdue?
+                if (active && overdue && running) {
+                    // -> Yes, this schedule is overdue, active and running.
+                    return "alert alert-warning";
+                }
             }
+
+            // All is good.
+            return "alert alert-light";
+
         }
     }
 
