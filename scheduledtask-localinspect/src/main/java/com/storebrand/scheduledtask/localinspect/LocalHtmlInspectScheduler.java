@@ -113,6 +113,10 @@ public class LocalHtmlInspectScheduler {
      * Retrieve the stylesheet, should only be included once.
      */
     public void getStyleSheet(Writer out) throws IOException {
+        // General styling for the schedules-table
+        out.write(".schedules-table tbody > tr > td {"
+                + " vertical-align: inherit;"
+                + "}");
         // General styling for the log-content table
         out.write(".error-content .error {"
                 + "    background-repeat: no-repeat;"
@@ -300,12 +304,12 @@ public class LocalHtmlInspectScheduler {
                 scheduleDto.lastRunStarted = lastRun.get().getRunStarted().atZone(ZoneId.systemDefault()).toInstant();
                 // If last run where set to DONE we can use the statusTime to set this as "completed time"
                 if (lastRun.get().getStatus().equals(State.DONE)) {
-                    // this will also set lastRunComplete = null when a job is newly started on all nodes (even master)
+                    // this will also set lastRunComplete = null when a job is newly started on all nodes (even Active node)
                     scheduleDto.lastRunComplete = lastRun.get().getStatusTime().atZone(ZoneId.systemDefault()).toInstant();
                 }
             }
 
-            // :? If this is a slave node we should set Running and Overdue to N/A
+            // :? If this is a slave node we should set Running and Overdue to empty string
             if (!_scheduledTaskRegistry.hasMasterLock()) {
                 // -> No, we do not have the master lock so set these to null to inform this is not
                 // available.
@@ -318,37 +322,41 @@ public class LocalHtmlInspectScheduler {
 
         // Create a description informing of node that has the master lock.
         Optional<MasterLock> masterLock = _scheduledTaskRegistry.getMasterLock();
-        String masterNodeDescription;
+        // Top header informing on what node is currently master
+        out.write("<h1>Active Schedules</h1>");
         // ?: did we find any lock?
-        if (!masterLock.isPresent()) {
+        if (masterLock.isEmpty()) {
             // -> No, nobody has the lock
-            masterNodeDescription = "Unclaimed lock";
+            out.write("<div class=\"alert alert-danger\">");
+            out.write("Unclaimed lock");
+            out.write("</div>");
         }
         // ?: We have a lock, but it may be old
         else if (masterLock.get().getLockLastUpdatedTime().isBefore(
                 _clock.instant().minus(5, ChronoUnit.MINUTES))) {
             // Yes-> it is an old lock
-            masterNodeDescription = "No-one currently has the lock, last node to have it where "
-                    + "[" + masterLock.get().getNodeName() + "]";
+            out.write("<div class=\"alert alert-danger\">");
+            out.write("No-one currently has the lock, last node to have it where "
+                    + "[" + masterLock.get().getNodeName() + "]");
+            out.write("</div>");
         }
         else {
             // -----  Someone has the lock, and it's under 5 min old and still valid.
-            masterNodeDescription = "<b>" + masterLock.get().getNodeName() + "</b> has the master lock";
+            // ?: Is this running node the active one?
+            if (_scheduledTaskRegistry.hasMasterLock()) {
+                // -> Yes, this running node is the active one.
+                out.write("<div class=\"alert alert-success\">");
+                out.write("This node is the active node (<b>" + masterLock.get().getNodeName() + "</b>)");
+                out.write("</div>");
+            }
+            else {
+                // E-> No, this running node is not the active one
+                out.write("<div class=\"alert alert-danger\">");
+                out.write("This node is <b>NOT</b> the active node  (<b>" + masterLock.get().getNodeName() + "</b> is active)");
+                out.write("</div>");
+            }
         }
 
-        // Top header informing on what node is currently master
-        out.write("<h1>Active Schedules</h1>");
-        // ?: Is this running node master?
-        if (_scheduledTaskRegistry.hasMasterLock()) {
-            // -> Yes, this running node is master so set the alert-success class
-            out.write("<div class=\"alert alert-success\">");
-        }
-        else {
-            // E-> No this running node is not master so set the alert-danger class
-            out.write("<div class=\"alert alert-danger\">");
-        }
-        out.write(masterNodeDescription);
-        out.write("</div>");
         // General information about the schedules and this page
         out.write("<ul>"
                 + "    <li>When a scheduled method is inactive, the content is not executed on this host. (and server-status will warn)</li>"
@@ -372,11 +380,10 @@ public class LocalHtmlInspectScheduler {
                 + "    <td><b>Toggle active</b></td>"
                 + "    <td><b>Execute</b></td>"
                 + "    <td><b>Running</b></td>"
-                + "    <td><b>Overdue</b></td>"
-                + "    <td><b>ExpectedToRun (min)</b></td>"
+                + "    <td><b>ExpectedToRun</b></td>"
                 + "    <td><b>Last run start</b></td>"
                 + "    <td><b>Last run stop</b></td>"
-                + "    <td><b>Last run in ms</b></td>"
+                + "    <td><b>Last run (HH:MM:SS)</b></td>"
                 + "    <td><b>Default CRON</b></td>"
                 + "    <td>"
                 + "        <b>Current <a href=\"https://docs.oracle.com/cd/E12058_01/doc/doc.1014/e12030/cron_expressions.htm\" target=\"_blank\">CRON</a></b>"
@@ -419,12 +426,11 @@ public class LocalHtmlInspectScheduler {
                 + "            </div>"
                 + "        </form>"
                 + "    </td>"
-                + "    <td>" + schedule.isRunning() + "</td>"
-                + "    <td>" + schedule.isOverdue() + "</td>"
+                + "    <td>" + schedule.getRunningAndOverdue() + "</td>"
                 + "    <td>" + schedule.getMaxExpectedMinutes() + "</td>"
                 + "    <td>" + schedule.getLastRunStarted() + "</td>"
                 + "    <td>" + schedule.getLastRunComplete() + "</td>"
-                + "    <td>" + schedule.getLastRunInMs() + "</td>"
+                + "    <td>" + schedule.getLastRunInHHMMSS() + "</td>"
                 + "    <td>" + schedule.getDefaultCronExpression() + "</td>"
                 + "    <td>"
                 + "        <form method=\"post\">"
@@ -670,9 +676,9 @@ public class LocalHtmlInspectScheduler {
     }
 
     /**
-     * Will trigger a schedule run for a schedule. Note if this is triggered on a node that is not master
-     * it can take up to 2 min before it will trigger due to it has to notify the master to run it now
-     * via the db and the master node check the db every 2 min.
+     * Will trigger a schedule run for a schedule. Note if this is triggered on a node that is not Active
+     * it can take up to 2 min before it will trigger due to it has to notify the Active node to run it now
+     * via the db and the Active node check the db every 2 min.
      */
     public void triggerSchedule(String scheduleName) {
         _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
@@ -736,13 +742,13 @@ public class LocalHtmlInspectScheduler {
             return escapeHtml(schedulerName);
         }
 
-        public boolean isActive() {
-            return active;
+        public String isActive() {
+            return active ? "✅" : "❌";
         }
 
         public String getLastRunStarted() {
             if (lastRunStarted == null) {
-                return "N/A";
+                return "";
             }
 
             LocalDateTime dateTime = LocalDateTime.ofInstant(lastRunStarted, ZoneId.systemDefault());
@@ -754,7 +760,7 @@ public class LocalHtmlInspectScheduler {
             if (lastRunComplete == null || lastRunStarted == null || lastRunStarted.isAfter(lastRunComplete)) {
                 // -> Yes. lastRunComplete and/or lastRunStarted is empty or the lastRunStarted is after lastRunComplete.
                 // regardless we have not a valid lastRunComplete time yet.
-                return "N/A";
+                return "";
             }
 
             // Both lastRunCompleted and lastRunStarted has a valid instant, and the lastRunStarted is
@@ -764,45 +770,60 @@ public class LocalHtmlInspectScheduler {
         }
 
         public String getActiveCronExpression() {
-            return activeCronExpression.toString();
+            return activeCronExpression;
         }
 
         public String getDefaultCronExpression() {
-            return defaultCronExpression.toString();
+            return defaultCronExpression;
         }
 
-        public String getLastRunInMs() {
+        public String getLastRunInHHMMSS() {
             // ?: Did the last run complete after current run started?
             if (lastRunStarted != null && lastRunComplete != null
                     && lastRunStarted.isBefore(lastRunComplete)) {
                 // -> Yes, we got a valid duration
-                Duration runDuration = Duration.between(lastRunStarted, lastRunComplete);
-                return String.valueOf(runDuration.toMillis());
+                long runDurationInSeconds = Duration.between(lastRunStarted, lastRunComplete).getSeconds();
+                long hours = runDurationInSeconds / 3600;
+                long minutes = (runDurationInSeconds % 3600) / 60;
+                long seconds = runDurationInSeconds % 60;
+                return String.format("%02d:%02d:%02d", hours, minutes, seconds);
             }
 
             // E-> No, the current run started after the last run, so we can't give a valid duration
-            return "N/A";
+            return "";
         }
 
         public String getNextExpectedRun() {
             if (nextExpectedRun == null) {
-                return "N/A";
+                return "";
             }
 
             LocalDateTime dateTime = LocalDateTime.ofInstant(nextExpectedRun, ZoneId.systemDefault());
             return dateTime.format(DATE_TIME_FORMATTER);
         }
 
-        public int getMaxExpectedMinutes() {
-            return maxExpectedMinutes;
+        public String getMaxExpectedMinutes() {
+            return maxExpectedMinutes + " min";
         }
 
-        public String isOverdue() {
-            return overdue != null ? String.valueOf(overdue) : "N/A";
-        }
+        public String getRunningAndOverdue() {
+            // ?: If we have a value here we are running on an active node
+            if (running == null || overdue == null) {
+                // -> No, we are not running on an active node, noting to return here.
+                return "";
+            }
 
-        public String isRunning() {
-            return running != null ? String.valueOf(running) : "N/A";
+            // ?: Priority, check if we are overdue, IE the schedules are taking logger time than expected
+            if (overdue) {
+                return "⚠️";
+            }
+
+            if (running) {
+                return "✅";
+            }
+
+            // ----- We are on the active node, but we are not running.
+            return "";
         }
 
         public String getRowStyle() {
@@ -819,7 +840,7 @@ public class LocalHtmlInspectScheduler {
 
             // ?: should we react on the overdue and running?
             if (overdue != null &&  running != null) {
-                // -> Yes, we should react to these flags, this means we are running on the master
+                // -> Yes, we should react to these flags, this means we are running on the Active
                 // node.
 
                 // ?: Is this schedule overdue, ie it is active, is running and is overdue?
