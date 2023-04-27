@@ -55,7 +55,7 @@ subprojects {
     ext {
         slf4jVersion = '1.7.36'
         junitVersion = '5.8.2'
-        healthCheckVersion = '0.3.+'
+        healthCheckVersion = '0.4.+'
         springVersion = '5.3.20'
         javaxInjectVersion = '1'
         logbackClassicVersion = '1.2.11'
@@ -70,10 +70,6 @@ subprojects {
     project.buildDir = 'build-gradle'
 
     repositories {
-        maven {
-            url "http://artifactory.skagenfondene.no/artifactory/libs-release"
-            allowInsecureProtocol = true
-        }
         mavenCentral()
     }
 
