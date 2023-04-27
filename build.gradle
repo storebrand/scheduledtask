@@ -20,7 +20,7 @@ plugins {
 
 allprojects {
     group 'com.storebrand.scheduledtask'
-    version '0.1.4+2023-04-27'
+    version '0.1.5-SNAPSHOT'
 }
 
 subprojects {
