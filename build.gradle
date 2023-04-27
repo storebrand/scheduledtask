@@ -48,6 +48,7 @@ subprojects {
     javadoc {
         // without the -quiet option, the build fails due to errors&warns
         options.addStringOption('Xdoclint:none', '-quiet')
+        options.encoding = 'UTF-8'
     }
 
     // Common versions
