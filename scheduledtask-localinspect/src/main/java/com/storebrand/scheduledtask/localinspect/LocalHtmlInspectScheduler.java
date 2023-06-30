@@ -759,10 +759,10 @@ public class LocalHtmlInspectScheduler {
         }
 
         public String buttonDisabled() {
-            // Button should be disabled if the schedule is either:
-            // 1: Running
-            // 2: Not active
-            return running || !active ? "disabled" : "";
+            // Button should be disabled if the schedule is Not active.
+            // We cant disable the button when the schedule is set to in-active due to the inactive nodes has
+            // no status of current running state
+            return !active ? "disabled" : "";
         }
 
         public String getLastRunStarted() {
