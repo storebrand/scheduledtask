@@ -689,13 +689,13 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         @Override
         public void log(String msg) {
-            log.info(msg);
+            log.info("ScheduledRunId [" + _runId + "]: " + msg);
             _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg);
         }
 
         @Override
         public void log(String msg, Throwable throwable) {
-            log.info(msg, throwable);
+            log.error("ScheduledRunId [" + _runId + "]: " + msg, throwable);
             _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg,
                     throwableToStackTraceString(throwable));
         }
@@ -712,7 +712,8 @@ class ScheduledTaskRunner implements ScheduledTask {
         public ScheduleStatus failed(String msg) {
             _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg);
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
-            log("[" + State.FAILED + "] " + msg);
+            log.error("ScheduledRunId [" + _runId + "]: " + msg);
+            _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg);
             return new ScheduleStatusValidResponse();
         }
 
