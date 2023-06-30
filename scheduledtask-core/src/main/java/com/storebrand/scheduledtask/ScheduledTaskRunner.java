@@ -689,11 +689,13 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         @Override
         public void log(String msg) {
+            log.info(msg);
             _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg);
         }
 
         @Override
         public void log(String msg, Throwable throwable) {
+            log.info(msg, throwable);
             _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg,
                     throwableToStackTraceString(throwable));
         }
@@ -702,7 +704,6 @@ class ScheduledTaskRunner implements ScheduledTask {
         public ScheduleStatus done(String msg) {
             _scheduledRunDto.setStatus(State.DONE, Instant.now(_clock), msg);
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
-            log.info("[" + State.DONE + "] " + msg);
             log("[" + State.DONE + "] " + msg);
             return new ScheduleStatusValidResponse();
         }
@@ -711,7 +712,6 @@ class ScheduledTaskRunner implements ScheduledTask {
         public ScheduleStatus failed(String msg) {
             _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg);
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
-            log.error("[" + State.FAILED + "] " + msg);
             log("[" + State.FAILED + "] " + msg);
             return new ScheduleStatusValidResponse();
         }
@@ -720,7 +720,6 @@ class ScheduledTaskRunner implements ScheduledTask {
         public ScheduleStatus failed(String msg, Throwable throwable) {
             _scheduledRunDto.setStatus(State.FAILED, Instant.now(_clock), msg, throwableToStackTraceString(throwable));
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
-            log.error("[" + State.FAILED + "] " + msg);
             log("[" + State.FAILED + "] " + msg, throwable);
             return new ScheduleStatusValidResponse();
         }
@@ -729,7 +728,6 @@ class ScheduledTaskRunner implements ScheduledTask {
         public ScheduleStatus dispatched(String msg) {
             _scheduledRunDto.setStatus(State.DISPATCHED, Instant.now(_clock), msg);
             _scheduledTaskRepository.setStatus(_scheduledRunDto);
-            log.info("[" + State.DISPATCHED + "] " + msg);
             log("[" + State.DISPATCHED + "] " + msg);
             return new ScheduleStatusValidResponse();
         }
