@@ -105,8 +105,20 @@ public class LocalHtmlInspectScheduler {
                 // Then set the show modal for this one.
                 + "    modalBoxToShow.addClass(\"show-modal\");"
                 + "}); ");
-        // Listens for close mobalbox events (by click on the x inside the modalbox
+        // Listens for close mobalbox events (by click on the x inside the modalbox)
         out.write("$('.log-modal-content .log-modal-content-close').click(closeLogModalBox);");
+
+        // Listens click events outside the modalbox, this should close the modalbox.
+        out.write("$('.log-modal-box').click(function(e) {"
+                        // ?: Did we find any open modal boxes?
+                + "    if ($('.log-modal-box.show-modal').size() > 0) {"
+                           // -> Yes, we did. Is the click outside the modal box?"
+                + "        if (e.target.closest('.log-modal-content') == null) {"
+                + "                closeLogModalBox();"
+                + "            }"
+                + "      }"
+                + "    }"
+                + ");");
     }
 
     /**
@@ -421,7 +433,7 @@ public class LocalHtmlInspectScheduler {
                 + "            <div class=\"input-group\">"
                 + "                <input type=\"hidden\" name=\"executeScheduler.local\" class=\"form-control\" value=\"" + schedule.getSchedulerName() + "\">"
                 + "                <span class=\"input-group-btn\">"
-                + "        <button class=\"btn btn-primary\" type=\"submit\">Execute Scheduler</button>"
+                + "        <button class=\"btn btn-primary\" type=\"submit\" " + schedule.buttonDisabled() + ">Execute Scheduler</button>"
                 + "                 </span>"
                 + "            </div>"
                 + "        </form>"
@@ -744,6 +756,13 @@ public class LocalHtmlInspectScheduler {
 
         public String isActive() {
             return active ? "✅" : "❌";
+        }
+
+        public String buttonDisabled() {
+            // Button should be disabled if the schedule is either:
+            // 1: Running
+            // 2: Not active
+            return running || !active ? "disabled" : "";
         }
 
         public String getLastRunStarted() {
