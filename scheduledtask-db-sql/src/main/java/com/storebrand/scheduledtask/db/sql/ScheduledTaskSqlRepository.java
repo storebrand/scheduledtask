@@ -560,6 +560,16 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, State.FAILED);
             }
 
+            // ?: Is delete noop runs after days defined?
+            if (retentionPolicy.getDeleteNoopRunsAfterDays() > 0) {
+                // -> Yes, then we delete all records older than max days.
+
+                LocalDateTime deleteOlder = LocalDateTime.now(_clock)
+                        .minusDays(retentionPolicy.getDeleteNoopRunsAfterDays());
+
+                deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder, State.NOOP);
+            }
+
             // ?: Have we defined max runs to keep?
             if (retentionPolicy.getKeepMaxRuns() > 0) {
                 // -> Yes, then should only keep this many
@@ -596,6 +606,18 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 }
             }
 
+            // ?: Have we defined max noop runs to keep?
+            if (retentionPolicy.getKeepMaxNoopRuns() > 0) {
+                // -> Yes, then should only keep this many
+
+                Optional<LocalDateTime> deleteOlder = findDeleteOlderForKeepMax(sqlConnection, scheduleName,
+                        retentionPolicy.getKeepMaxFailedRuns(), State.NOOP);
+
+                if (deleteOlder.isPresent()) {
+                    deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder.get(), State.NOOP);
+                }
+            }
+
             if (deletedRecords > 0) {
                 log.info("Scheduled task " + scheduleName + ": Deleted " + deletedRecords + " old records.");
             }
@@ -619,8 +641,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             sql += " AND status = ? ";
         }
         else {
-            // No -> Then we should delete DONE and FAILED statuses. We should not delete runs that are not complete.
-            sql += " AND status IN (?, ?) ";
+            // No -> Then we should delete DONE, NOOP and FAILED statuses. We should not delete runs that are not complete.
+            sql += " AND status IN (?, ?, ?) ";
         }
         sql += " ORDER BY schedule_name, run_start DESC, status "
                 + " OFFSET ? ROWS "
@@ -635,9 +657,10 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             }
             else {
                 pStmt.setString(2, State.DONE.name());
-                pStmt.setString(3, State.FAILED.name());
+                pStmt.setString(3, State.NOOP.name());
+                pStmt.setString(4, State.FAILED.name());
 
-                pStmt.setInt(4, keep);
+                pStmt.setInt(5, keep);
             }
 
             ResultSet rs = pStmt.executeQuery();
@@ -660,8 +683,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             where += " AND status = ? ";
         }
         else {
-            // No -> Then we should delete DONE and FAILED statuses. We should not delete runs that are not complete.
-            where += " AND status IN (?, ?) ";
+            // No -> Then we should delete DONE, NOOP and FAILED statuses. We should not delete runs that are not complete.
+            where += " AND status IN (?, ?, ?) ";
         }
 
         String deleteLogs = "DELETE FROM " + SCHEDULE_LOG_ENTRY_TABLE
@@ -678,7 +701,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             }
             else {
                 pStmt.setString(3, State.DONE.name());
-                pStmt.setString(4, State.FAILED.name());
+                pStmt.setString(4, State.NOOP.name());
+                pStmt.setString(5, State.FAILED.name());
             }
 
             pStmt.executeUpdate();
@@ -693,6 +717,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             else {
                 pStmt.setString(3, State.DONE.name());
                 pStmt.setString(4, State.FAILED.name());
+                pStmt.setString(5, State.NOOP.name());
             }
 
             return pStmt.executeUpdate();

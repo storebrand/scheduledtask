@@ -99,6 +99,14 @@ public @interface ScheduledTask {
     int deleteFailedRunsAfterDays() default 0;
 
     /**
+     * Define the number of days we should keep a record of noop runs for this schedule. If both this and
+     * {@link #deleteRunsAfterDays()} is used then both rules will be applied, and the lowest of the two will be used
+     * to determine when to delete failed runs.
+     * The default is to delete records after 7 days. Set to 0 to disable this rule.
+     */
+    int deleteNoopRunsAfterDays() default ScheduledTaskBuilder.DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS;
+
+    /**
      * Only keep this many runs. Older records will be deleted if there are more. This rule is disabled by default.
      */
     int keepMaxRuns() default 0;
@@ -116,4 +124,11 @@ public @interface ScheduledTask {
      * used to determine how many to keep.
      */
     int keepMaxFailedRuns() default 0;
+
+    /**
+     * Only keep this many noop runs. Older records will be deleted if there are more. This rule is set to 100 by
+     * default. If both this and {@link #keepMaxRuns()} is used then both will be applied, and the lowest number will be
+     * used to determine how many to keep.
+     */
+    int keepMaxNoopRuns() default ScheduledTaskBuilder.DEFAULT_KEEP_MAX_NOOP_RUNS;
 }

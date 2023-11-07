@@ -40,6 +40,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository.ScheduledRunDbo;
@@ -523,6 +524,32 @@ public class ScheduledTaskSqlRepositoryTest {
         assertEquals(0, scheduleRun.get().getLogEntries().size());
         assertEquals(doneInstant, scheduleRun.get().getStatusTime());
         assertEquals(ScheduledTaskRegistry.State.DONE, scheduleRun.get().getStatus());
+    }
+
+    @Test
+    public void setStatusNoop_ok() {
+        // :: Setup
+        ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
+        LocalDateTime now = LocalDateTime.of(2021, 3, 3, 12, 1);
+        Instant nowInstant = now.atZone(ZoneId.systemDefault()).toInstant();
+        _clock.setFixedClock(now);
+        long inserted = schedulerRep.addScheduleRun("test-schedule", "some-hostname",
+                nowInstant, "schedule run inserted");
+
+        // :: Act
+        schedulerRep.setStatus(inserted, ScheduledTaskRegistry.State.NOOP, "This run did nothing",
+                null, Instant.now(_clock));
+
+        // :: Assert
+        assertTrue(inserted > 0);
+        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        assertTrue(scheduleRun.isPresent());
+        assertEquals("This run did nothing", scheduleRun.get().getStatusMsg());
+        assertEquals(State.NOOP, scheduleRun.get().getStatus());
+        assertNull(scheduleRun.get().getStatusThrowable());
+        assertEquals(nowInstant, scheduleRun.get().getRunStart());
+        assertEquals(0, scheduleRun.get().getLogEntries().size());
+        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
     }
 
     @Test

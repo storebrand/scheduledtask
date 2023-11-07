@@ -396,9 +396,11 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         private int _deleteRunsAfter = DEFAULT_DELETE_RUNS_AFTER_DAYS;
         private int _deleteSuccessfulRunsAfter;
         private int _deleteFailedRunsAfterDays;
+        private int _deleteNoopRunsAfterDays = DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS;
         private int _keepMaxRuns;
         private int _keepMaxSuccessfulRuns;
         private int _keepMaxFailedRuns;
+        private int _keepMaxNoopRuns = DEFAULT_KEEP_MAX_NOOP_RUNS;
 
         private ScheduledTaskRunnerBuilder(String scheduleName, String cronExpression,
                 ScheduleRunnable runnable) {
@@ -444,6 +446,12 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         }
 
         @Override
+        public ScheduledTaskBuilder deleteNoopRunsAfterDays(int days) {
+            _deleteNoopRunsAfterDays = days;
+            return this;
+        }
+
+        @Override
         public ScheduledTaskBuilder keepMaxRuns(int maxRuns) {
             _keepMaxRuns = maxRuns;
             return this;
@@ -458,6 +466,12 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         @Override
         public ScheduledTaskBuilder keepMaxFailedRuns(int maxFailedRuns) {
             _keepMaxFailedRuns = maxFailedRuns;
+            return this;
+        }
+
+        @Override
+        public ScheduledTaskBuilder keepMaxNoopRuns(int maxNoopRuns) {
+            _keepMaxNoopRuns = maxNoopRuns;
             return this;
         }
 
@@ -483,8 +497,10 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                         .deleteRunsAfterDays(_deleteRunsAfter)
                         .deleteSuccessfulRunsAfterDays(_deleteSuccessfulRunsAfter)
                         .deleteFailedRunsAfterDays(_deleteFailedRunsAfterDays)
+                        .deleteNoopRunsAfterDays(_deleteNoopRunsAfterDays)
                         .keepMaxRuns(_keepMaxRuns)
                         .keepMaxSuccessfulRuns(_keepMaxSuccessfulRuns)
+                        .keepMaxNoopRuns(_keepMaxNoopRuns)
                         .keepMaxFailedRuns(_keepMaxFailedRuns).build();
 
                 ScheduledTaskConfig config = new ScheduledTaskConfig(_scheduleName, _cronExpression,

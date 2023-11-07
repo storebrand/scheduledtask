@@ -488,9 +488,24 @@ public class LocalHtmlInspectScheduler {
         }
 
         // Get the historic runs for this schedule:
-        List<MonitorHistoricRunDto> scheduleRuns = schedule.getAllScheduleRunsBetween(fromDate, toDate).stream()
-                .map(MonitorHistoricRunDto::fromContext)
-                .collect(toList());
+        List<MonitorHistoricRunDto> scheduleRuns = new ArrayList<>();
+        for (ScheduleRunContext scheduleRunContext : schedule.getAllScheduleRunsBetween(fromDate, toDate)) {
+            // Get the previous run, if any
+            MonitorHistoricRunDto prev = scheduleRuns.isEmpty() ? null : scheduleRuns.get(scheduleRuns.size() - 1);
+            MonitorHistoricRunDto monitorHistoricRunDto =
+                    MonitorHistoricRunDto.fromContext(prev, scheduleRunContext);
+
+            // ?: Is this not a NOOP run or is it the first run?
+            if (monitorHistoricRunDto.status != State.NOOP || prev == null) {
+                // Yes -> then add it to the list
+                scheduleRuns.add(monitorHistoricRunDto);
+            }
+            else {
+                // No - then replace the previous run with this one. This causes us to collapse all subsequent NOOP
+                //      runs to a single run.
+                scheduleRuns.set(scheduleRuns.size() - 1, monitorHistoricRunDto);
+            }
+        }
 
         // We got a schedule name, check to see if we found it.
         out.write("<h2>Runs for schedule <b>" + scheduleName + "</b></h2>");
@@ -589,11 +604,24 @@ public class LocalHtmlInspectScheduler {
     }
 
     public void renderScheduleRunsRow(Writer out, MonitorHistoricRunDto runDto) throws IOException {
+        // We collapse all noop runs to the latest one, so we should render the noop count if we have any.
+        String noopCount;
+        switch (runDto.getNoopCount()) {
+            case 0:
+                noopCount = "";
+                break;
+            case 1:
+                noopCount = " (1 time)";
+                break;
+            default:
+                noopCount = " (" + runDto.getNoopCount() + " times)";
+                break;
+        }
         out.write("<tr>"
                 + "    <td>" + runDto.getRunId() + "</td>"
                 + "    <td>" + runDto.getScheduleName() + "</td>"
                 + "    <td>" + runDto.getHostname() + "</td>"
-                + "    <td>" + runDto.getStatus() + "</td>"
+                + "    <td>" + runDto.getStatus() + noopCount + "</td>"
                 + "    <td>" + runDto.getStatusMsg() + "</td>"
                 + "    <td>"
                 + "        <div class=\"error-content log-modal-header\">"
@@ -861,29 +889,44 @@ public class LocalHtmlInspectScheduler {
         private final String scheduleName;
         private final String hostname;
         private final State status;
+        private final int noopCount;
         private final String statusMsg;
         private final String statusStackTrace;
         private final LocalDateTime runStart;
         private final LocalDateTime statusTime;
         private List<MonitorHistoricRunLogEntryDto> logEntries = new ArrayList<>();
 
-        public MonitorHistoricRunDto(long runId, String scheduleName, String hostname, State status, String statusMsg,
-                String statusStackTrace, LocalDateTime runStart, LocalDateTime statusTime) {
+        private MonitorHistoricRunDto(
+                long runId,
+                String scheduleName,
+                String hostname,
+                State status,
+                int noopCount,
+                String statusMsg,
+                String statusStackTrace,
+                LocalDateTime runStart,
+                LocalDateTime statusTime) {
             this.runId = runId;
             this.scheduleName = scheduleName;
             this.hostname = hostname;
             this.status = status;
+            this.noopCount = noopCount;
             this.statusMsg = statusMsg;
             this.statusStackTrace = statusStackTrace;
             this.runStart = runStart;
             this.statusTime = statusTime;
         }
 
-        public static MonitorHistoricRunDto fromContext(ScheduleRunContext context) {
+        public static MonitorHistoricRunDto fromContext(MonitorHistoricRunDto prev, ScheduleRunContext context) {
+            int noopCount = 0;
+            if (context.getStatus() == State.NOOP && prev != null) {
+                noopCount = prev.noopCount + 1;
+            }
             return new MonitorHistoricRunDto(context.getRunId(),
                     context.getScheduledName(),
                     context.getHostname(),
                     context.getStatus(),
+                    noopCount,
                     context.getStatusMsg(),
                     context.getStatusStackTrace(),
                     context.getRunStarted(),
@@ -904,6 +947,10 @@ public class LocalHtmlInspectScheduler {
 
         public State getStatus() {
             return status;
+        }
+
+        public int getNoopCount() {
+            return noopCount;
         }
 
         public String getStatusMsg() {
