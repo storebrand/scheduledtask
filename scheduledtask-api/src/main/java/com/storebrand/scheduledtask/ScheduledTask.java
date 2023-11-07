@@ -24,6 +24,7 @@ import java.util.Optional;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 
 /**
  * Represents a running scheduled task.
@@ -229,9 +230,13 @@ public interface ScheduledTask {
 
         int getDeleteFailedRunsAfterDays();
 
+        int getDeleteNoopRunsAfterDays();
+
         int getKeepMaxFailedRuns();
 
         int getKeepMaxSuccessfulRuns();
+
+        int getKeepMaxNoopRuns();
 
         int getKeepMaxRuns();
 

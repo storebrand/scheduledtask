@@ -800,6 +800,14 @@ class ScheduledTaskRunner implements ScheduledTask {
             log("[" + State.DISPATCHED + "] " + msg);
             return new ScheduleStatusValidResponse();
         }
+
+        @Override
+        public ScheduleStatus noop(String msg) {
+            _scheduledRunDto.setStatus(State.NOOP, Instant.now(_clock), msg);
+            _scheduledTaskRepository.setStatus(_scheduledRunDto);
+            log("[" + State.NOOP + "] " + msg);
+            return new ScheduleStatusValidResponse();
+        }
     }
 
     /**

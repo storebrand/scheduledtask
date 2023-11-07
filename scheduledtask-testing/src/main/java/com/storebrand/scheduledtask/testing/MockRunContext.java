@@ -165,6 +165,14 @@ class MockRunContext implements ScheduleRunContext {
         return createValidStatus();
     }
 
+
+    @Override
+    public ScheduleStatus noop(String msg) {
+        _state = State.NOOP;
+        _statusMessage = msg;
+        return createValidStatus();
+    }
+
     private void addLogEntry(String message, Throwable throwable) {
         synchronized (_logEntries) {
             LogEntry entry = new MockLogEntry(_logEntries.size() + 1, _id, message,

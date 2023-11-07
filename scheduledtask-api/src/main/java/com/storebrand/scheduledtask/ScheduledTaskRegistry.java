@@ -120,6 +120,7 @@ public interface ScheduledTaskRegistry {
         STARTED,
         FAILED,
         DISPATCHED,
+        NOOP,
         DONE
     }
 
@@ -227,6 +228,14 @@ public interface ScheduledTaskRegistry {
          * {@link #done(String)} is not set.
          */
         ScheduleStatus dispatched(String msg);
+
+        /**
+         * Result indicating that the task did nothing.
+         * This can be used for ScheduledTasks that has a check element in addition to the cron expression
+         * to test if it should run. Noop entries have separate retention from DONE and FAILED. Also, they could be
+         * presented in a different manner in UI, as these are less important.
+         */
+        ScheduleStatus noop(String msg);
     }
 
     /**

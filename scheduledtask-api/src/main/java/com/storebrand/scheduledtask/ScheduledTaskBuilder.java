@@ -33,6 +33,8 @@ public interface ScheduledTaskBuilder {
     Criticality DEFAULT_CRITICALITY = Criticality.IMPORTANT;
     Recovery DEFAULT_RECOVERY = Recovery.SELF_HEALING;
     int DEFAULT_DELETE_RUNS_AFTER_DAYS = 365;
+    int DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS = 7;
+    int DEFAULT_KEEP_MAX_NOOP_RUNS = 100;
 
     /**
      * Define the maximum minutes this task is expected to run.
@@ -94,6 +96,17 @@ public interface ScheduledTaskBuilder {
     ScheduledTaskBuilder deleteFailedRunsAfterDays(int days);
 
     /**
+     * Define the number of days we should keep a record of noop runs for this schedule. By default this is 1 week.
+     * If both this and {@link #deleteRunsAfterDays(int)} is used then both rules will be applied, and the
+     * lowest of the two will be used to determine when to delete failed runs.
+     *
+     * @param days
+     *         after this number of days we should delete records of noop runs.
+     * @return the initializer that builds the {@link ScheduledTask}.
+     */
+    ScheduledTaskBuilder deleteNoopRunsAfterDays(int days);
+
+    /**
      * Only keep this many runs. Older records will be deleted if there are more. This rule is disabled by default.
      *
      * @param maxRuns
@@ -124,6 +137,17 @@ public interface ScheduledTaskBuilder {
      */
     ScheduledTaskBuilder keepMaxFailedRuns(int maxFailedRuns);
 
+
+    /**
+     * Only keep this many noop runs. Older records will be deleted if there are more. This rule is set to 100 records
+     * by default. If both this and {@link #keepMaxRuns(int)} is used then both will be applied, and the lowest number
+     * will be used to determine how many to keep.
+     *
+     * @param maxNoopRuns
+     *         the maximum number of noop runs we should keep records of.
+     * @return the initializer that builds the {@link ScheduledTask}.
+     */
+    ScheduledTaskBuilder keepMaxNoopRuns(int maxNoopRuns);
 
     /**
      * Initializes and starts the scheduled task. It is important to call this, or the scheduled task will not be

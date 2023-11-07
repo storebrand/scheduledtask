@@ -104,9 +104,11 @@ public class ScheduledTaskAnnotationUtils {
                     .deleteRunsAfterDays(annotation.deleteRunsAfterDays())
                     .deleteSuccessfulRunsAfterDays(annotation.deleteSuccessfulRunsAfterDays())
                     .deleteFailedRunsAfterDays(annotation.deleteFailedRunsAfterDays())
+                    .deleteNoopRunsAfterDays(annotation.deleteNoopRunsAfterDays())
                     .keepMaxRuns(annotation.keepMaxRuns())
                     .keepMaxSuccessfulRuns(annotation.keepMaxSuccessfulRuns())
                     .keepMaxFailedRuns(annotation.keepMaxFailedRuns())
+                    .keepMaxNoopRuns(annotation.keepMaxNoopRuns())
                     .start();
         }
     }

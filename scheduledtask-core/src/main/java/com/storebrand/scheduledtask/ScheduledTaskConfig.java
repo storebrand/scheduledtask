@@ -93,21 +93,28 @@ public class ScheduledTaskConfig {
 
         private final int _keepMaxFailedRuns;
         private final int _keepMaxSuccessfulRuns;
+        private final int _keepMaxNoopRuns;
 
         private final int _keepMaxRuns;
 
         private final int _deleteFailedRunsAfterDays;
         private final int _deleteSuccessfulRunsAfterDays;
+        private final int _deleteNoopRunsAfterDays;
 
         private final int _deleteRunsAfterDays;
 
-        private StaticRetentionPolicy(int keepMaxSuccessfulRuns, int keepMaxFailedRuns, int keepMaxRuns, int deleteSuccessfulRunsAfterDays,
-                int deleteFailedRunsAfterDays, int deleteRunsAfterDays) {
+        private StaticRetentionPolicy(
+                int keepMaxSuccessfulRuns, int keepMaxFailedRuns, int keepMaxNoopRuns,
+                int keepMaxRuns,
+                int deleteSuccessfulRunsAfterDays, int deleteFailedRunsAfterDays, int deleteNoopRunsAfterDays,
+                int deleteRunsAfterDays) {
             _keepMaxFailedRuns = keepMaxFailedRuns;
             _keepMaxSuccessfulRuns = keepMaxSuccessfulRuns;
+            _keepMaxNoopRuns = keepMaxNoopRuns;
             _keepMaxRuns = keepMaxRuns;
             _deleteFailedRunsAfterDays = deleteFailedRunsAfterDays;
             _deleteSuccessfulRunsAfterDays = deleteSuccessfulRunsAfterDays;
+            _deleteNoopRunsAfterDays = deleteNoopRunsAfterDays;
             _deleteRunsAfterDays = deleteRunsAfterDays;
         }
 
@@ -126,6 +133,11 @@ public class ScheduledTaskConfig {
         }
 
         @Override
+        public int getKeepMaxNoopRuns() {
+            return _keepMaxNoopRuns;
+        }
+
+        @Override
         public int getKeepMaxRuns() {
             return _keepMaxRuns;
         }
@@ -141,25 +153,39 @@ public class ScheduledTaskConfig {
         }
 
         @Override
+        public int getDeleteNoopRunsAfterDays() {
+            return _deleteNoopRunsAfterDays;
+        }
+
+        @Override
         public int getDeleteRunsAfterDays() {
             return _deleteRunsAfterDays;
         }
 
         @Override
         public boolean isRetentionPolicyEnabled() {
-            return _deleteRunsAfterDays > 0 || _deleteFailedRunsAfterDays > 0 || _deleteSuccessfulRunsAfterDays > 0
-                    || _keepMaxRuns > 0 || _keepMaxFailedRuns > 0 || _keepMaxSuccessfulRuns > 0;
+            return _deleteRunsAfterDays > 0
+                    || _deleteFailedRunsAfterDays > 0
+                    || _deleteSuccessfulRunsAfterDays > 0
+                    || _deleteNoopRunsAfterDays > 0
+                    || _keepMaxRuns > 0
+                    || _keepMaxFailedRuns > 0
+                    || _keepMaxNoopRuns > 0
+                    || _keepMaxSuccessfulRuns > 0;
         }
 
         public static class Builder {
             private int _keepMaxSuccessfulRuns;
             private int _keepMaxFailedRuns;
+            private int _keepMaxNoopRuns = ScheduledTaskBuilder.DEFAULT_KEEP_MAX_NOOP_RUNS; // Default 100
 
             private int _keepMaxRuns;
 
             private int _deleteSuccessfulRunsAfterDays;
             private int _deleteFailedRunsAfterDays;
 
+            private int _deleteNoopRunsAfterDays
+                    = ScheduledTaskBuilder.DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS; // Default one week
             private int _deleteRunsAfterDays = ScheduledTaskBuilder.DEFAULT_DELETE_RUNS_AFTER_DAYS; // Default one year
 
             public Builder keepMaxSuccessfulRuns(int keepMaxSuccessfulRuns) {
@@ -169,6 +195,11 @@ public class ScheduledTaskConfig {
 
             public Builder keepMaxFailedRuns(int keepMaxFailedRuns) {
                 _keepMaxFailedRuns = keepMaxFailedRuns;
+                return this;
+            }
+
+            public Builder keepMaxNoopRuns(int keepMaxNoopRuns) {
+                _keepMaxNoopRuns = keepMaxNoopRuns;
                 return this;
             }
 
@@ -187,14 +218,21 @@ public class ScheduledTaskConfig {
                 return this;
             }
 
+            public Builder deleteNoopRunsAfterDays(int days) {
+                _deleteNoopRunsAfterDays = days;
+                return this;
+            }
+
             public Builder deleteRunsAfterDays(int days) {
                 _deleteRunsAfterDays = days;
                 return this;
             }
 
             public RetentionPolicy build() {
-                return new StaticRetentionPolicy(_keepMaxSuccessfulRuns, _keepMaxFailedRuns, _keepMaxRuns,
-                        _deleteSuccessfulRunsAfterDays, _deleteFailedRunsAfterDays, _deleteRunsAfterDays);
+                return new StaticRetentionPolicy(_keepMaxSuccessfulRuns, _keepMaxFailedRuns, _keepMaxNoopRuns,
+                        _keepMaxRuns,
+                        _deleteSuccessfulRunsAfterDays, _deleteFailedRunsAfterDays, _deleteNoopRunsAfterDays,
+                        _deleteRunsAfterDays);
             }
         }
     }
