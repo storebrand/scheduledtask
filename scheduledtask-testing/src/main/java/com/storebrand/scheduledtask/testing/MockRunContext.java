@@ -161,6 +161,7 @@ class MockRunContext implements ScheduleRunContext {
     public ScheduleStatus dispatched(String msg) {
         _state = State.DISPATCHED;
         _statusMessage = msg;
+        log("[" + State.DISPATCHED + "] " + msg);
         return createValidStatus();
     }
 
