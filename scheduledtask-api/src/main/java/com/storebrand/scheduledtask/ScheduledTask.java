@@ -75,6 +75,12 @@ public interface ScheduledTask {
     void runNow();
 
     /**
+     * Check if the schedule task thread is active. This should in theory always be true, but if the thread has been
+     * stopped by some external means it will return false.
+     */
+    boolean isThreadActive();
+
+    /**
      * Check if this schedule is currently set to active ie {@link #start()} (default on startup).
      *
      * @return - True: It is executing the supplied runnable. - False: It is currently set to skip executing the
@@ -97,6 +103,11 @@ public interface ScheduledTask {
      * schedule is taking longer than expected.
      */
     boolean isRunning();
+
+    /**
+     * Checks if this run has passed expected run time.
+     */
+    boolean hasPassedExpectedRunTime(Instant runStarted);
 
     /**
      * Checks if this run is taking longer time than it was expected to use during creation of the schedule.

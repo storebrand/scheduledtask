@@ -295,8 +295,7 @@ public class LocalHtmlInspectScheduler {
 
             // For the stats of the previous run we need to retrieve the lastRun for this schedule, so we can update
             // the monitor status.
-            ScheduledTask schedule = _scheduledTaskRegistry.getScheduledTask(scheduledTask.getName());
-            Optional<ScheduleRunContext> lastRun = schedule.getLastScheduleRun();
+            Optional<ScheduleRunContext> lastRun = scheduledTask.getLastScheduleRun();
             // ?: Did we have a last run?
             if (lastRun.isPresent()) {
                 scheduleDto.lastRunStatus = lastRun.get().getStatus();
