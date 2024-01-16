@@ -48,7 +48,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 /**
  * Will produce an "embeddable" HTML interface.
  * To use this you need to include the {@link #getJavascript(Writer)}, {@link #getStyleSheet(Writer)} and
- * {@link #createSchedulesOverview(Writer)}. The last part is to render the show runs sections that displays
+ * {@link #createSchedulesOverview(Writer, LocalDateTime, LocalDateTime)}. The last part is to render the show runs sections that displays
  * historic runs for a schedule by using {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}
  * <p>
  * For now, this has been developed with a dependency on Bootstrap 3.4.1 and JQuery 1.12.4. This will be improved, so
@@ -156,15 +156,23 @@ public class LocalHtmlInspectScheduler {
                 + "    float: right;"
                 + "}");
         // Styling for the dateTime picker
-        out.write(".historic-runs-search .datetimepicker {"
+        out.write(".historic-runs-search {"
+                + "    margin-bottom: 20px;"
+                + "} "
+                + ".historic-runs-search .datetimepicker {"
                 + "    display: inline-flex;"
                 + "    align-items: center;"
+                + "    padding: 1px 0 2px 0;"
+                + "    color: #555;"
                 + "    background-color: #fff;"
-                + "    border: 1px solid black;"
-                + "    border-radius: 8px;"
+                + "    border: 1px solid #ccc;"
+                + "    border-radius: 4px;"
+                + "    box-shadow: inset 0 1px 1px rgba(0,0,0,.075);"
                 + "} "
                 + ".historic-runs-search .datetimepicker:focus-within {"
-                + "     border-color: teal;"
+                + "     border-color: #66afe9;"
+                + "     outline: 0;"
+                + "     box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(102,175,233,.6);"
                 + "} "
                 + ".historic-runs-search .datetimepicker input {"
                 + "     font: inherit;"
@@ -195,9 +203,6 @@ public class LocalHtmlInspectScheduler {
                 + "    margin-bottom: 0px;"
                 + "}"
                 + ".historic-runs-search .input-group {"
-                + "    display: inline-block;"
-                + "}"
-                + ".historic-runs-search .input-group-btn {"
                 + "    display: inline-block;"
                 + "    margin-left: 1em;"
                 + "}"
@@ -278,6 +283,34 @@ public class LocalHtmlInspectScheduler {
      * </ul>
      */
     public void createSchedulesOverview(Writer out) throws IOException {
+        createSchedulesOverview(out, null, null);
+    }
+
+    /**
+     * Renders the main overview table where all the registered schedules are shown.
+     * Here the schedule can be deactivated, triggered to run now, change schedule and button to show the
+     * {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}.
+     * <p>
+     * The <b>Show runs</b> button will return a parameter {@link #MONITOR_SHOW_RUNS}, this is then used with
+     * {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)} to renter that
+     * historic runs table.
+     * <p>
+     * The following parameters are returned by this tables click events:
+     * <ul>
+     *     <li>{@link #MONITOR_SHOW_RUNS} - Schedule name to be used with
+     *     {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}. This will render
+     *     the historic runs for this schedule.</li>
+     *     <li>{@link #MONITOR_SHOW_LOGS} - RunId to show the logs for, note the scheduleName must also be set.
+     *     is used with {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}</li>
+     *     <li>{@link #MONITOR_CHANGE_ACTIVE_PARAM} - If set is used to toggle the active state with
+     *     {@link #toggleActive(String)}</li>
+     *     <li>{@link #MONITOR_EXECUTE_SCHEDULER} - If set is used to trigger the schedule to run now. Used with
+     *     {@link #triggerSchedule(String)}</li>
+     *     <li>{@link #MONITOR_CHANGE_CRON} and {@link #MONITOR_CHANGE_CRON_SCHEDULER_NAME} - Both will be set
+     *     when a cron schedule is to be changed. Used with {@link #changeChronSchedule(String, String)}</li>
+     * </ul>
+     */
+    public void createSchedulesOverview(Writer out, LocalDateTime fromDate, LocalDateTime toDate) throws IOException {
         // Get all schedules from database:
         Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
         // Get all the schedules from memory
@@ -394,15 +427,15 @@ public class LocalHtmlInspectScheduler {
                 + "    </thead>");
         // :: Table - Render all schedules, one in each row.
         for (MonitorScheduleDto monitorScheduleDto : bindingsDtoMap) {
-            renderScheduleTableRow(out, monitorScheduleDto);
+            renderScheduleTableRow(out, monitorScheduleDto, fromDate, toDate);
         }
         out.write("</table>");
     }
-
     /**
      * Render one row in the Scheduler table.
      */
-    public void renderScheduleTableRow(Writer out, MonitorScheduleDto schedule) throws IOException {
+    public void renderScheduleTableRow(Writer out, MonitorScheduleDto schedule,
+            LocalDateTime fromDate, LocalDateTime toDate) throws IOException {
         out.write("<tr class=\"" + schedule.getRowStyle() + "\">");
         out.write("    <td>" + schedule.getSchedulerName() + "    </td>"
                 + "    <td><b>" + schedule.isActive() + "</b></td>"
@@ -410,9 +443,7 @@ public class LocalHtmlInspectScheduler {
                 + "        <form method=\"post\">"
                 + "            <div class=\"input-group\">"
                 + "                <input type=\"hidden\" name=\"toggleActive.local\" class=\"form-control\" value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <span class=\"input-group-btn\">"
-                + "        <button class=\"btn btn-default\" type=\"submit\">Toggle active</button>"
-                + "      </span>"
+                + "                <button class=\"btn btn-default\" type=\"submit\">Toggle active</button>"
                 + "            </div>"
                 + "        </form>"
                 + "    </td>"
@@ -420,9 +451,7 @@ public class LocalHtmlInspectScheduler {
                 + "        <form method=\"post\">"
                 + "            <div class=\"input-group\">"
                 + "                <input type=\"hidden\" name=\"executeScheduler.local\" class=\"form-control\" value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <span class=\"input-group-btn\">"
-                + "        <button class=\"btn btn-primary\" type=\"submit\">Execute Scheduler</button>"
-                + "                 </span>"
+                + "                <button class=\"btn btn-primary\" type=\"submit\">Execute Scheduler</button>"
                 + "            </div>"
                 + "        </form>"
                 + "    </td>"
@@ -449,9 +478,17 @@ public class LocalHtmlInspectScheduler {
                 + "            <div class=\"input-group\">"
                 + "                <input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\""
                 + "                       value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <span class=\"input-group-btn\">"
-                + "                    <button class=\"btn btn-primary\" type=\"submit\">show runs</button>"
-                + "                </span>"
+                + (fromDate != null && toDate != null
+                ? "                <input type=\"hidden\" name=\"" + MONITOR_DATE_FROM + "\""
+                + "                       value=\"" + toIsoLocalDate(fromDate)  + "\">"
+                + "                <input type=\"hidden\" name=\"" + MONITOR_TIME_FROM + "\""
+                + "                       value=\"" + toLocalTime(fromDate)  + "\">"
+                + "                <input type=\"hidden\" name=\"" + MONITOR_DATE_TO + "\""
+                + "                       value=\"" + toIsoLocalDate(toDate) + "\">"
+                + "                <input type=\"hidden\" name=\"" + MONITOR_TIME_TO + "\""
+                + "                       value=\"" + toLocalTime(toDate) + "\">"
+                : "")
+                + "                <button class=\"btn btn-primary\" type=\"submit\">Show Run Logs</button>"
                 + "            </div>"
                 + "        </form>"
                 + "    </td>"
@@ -493,7 +530,7 @@ public class LocalHtmlInspectScheduler {
                 .collect(toList());
 
         // We got a schedule name, check to see if we found it.
-        out.write("<h2>Runs for schedule <b>" + scheduleName + "</b></h2>");
+        out.write("<h2>Run logs for schedule: " + scheduleName + "</h2>");
 
         // Show the timespan on when we are retrieving the historic runs
         out.write("<div class=\"historic-runs-search\">Run start from "
@@ -521,17 +558,24 @@ public class LocalHtmlInspectScheduler {
         out.write("<div class=\"input-group\">"
                 + "<input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\" value=\"" + scheduleName
                 + "\">"
-                + "    <span class=\"input-group-btn\">"
-                + "        <button class=\"btn btn-primary\" type=\"submit\">Search</button>"
-                + "    </span>"
+                + "<button class=\"btn btn-primary\" type=\"submit\">Search</button>"
                 + "</div>"
                 + "</form>");
+        out.write("<div class=\"input-group\">"
+                + "    <form method=\"get\">"
+                + "        <input type=\"hidden\" name=\"" + MONITOR_SHOW_RUNS + "\""
+                + "               value=\"" + scheduleName + "\">"
+                + "        <span class=\"show-logs\">"
+                + "            <button class=\"btn btn-default\" type=\"submit\">Reset</button>"
+                + "        </span>"
+                + "    </form>"
+                + "</div>");
         out.write("</div>");
 
         // ?: Is there any schedule runs to show?
         if (scheduleRuns.isEmpty()) {
             // -> No, there is no schedule runs to show
-            out.write("<p>No runs found!</p>");
+            out.write("<div class=\"alert alert-info\">No runs found!</div>");
             return;
         }
 
@@ -575,7 +619,7 @@ public class LocalHtmlInspectScheduler {
 
         // Render each table row.
         for (MonitorHistoricRunDto runDto : scheduleRuns) {
-            renderScheduleRunsRow(out, runDto);
+            renderScheduleRunsRow(out, runDto, fromDate, toDate);
         }
         out.write("</table>");
     }
@@ -588,7 +632,8 @@ public class LocalHtmlInspectScheduler {
         return dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 
-    public void renderScheduleRunsRow(Writer out, MonitorHistoricRunDto runDto) throws IOException {
+    public void renderScheduleRunsRow(Writer out, MonitorHistoricRunDto runDto,
+            LocalDateTime fromDate, LocalDateTime toDate) throws IOException {
         out.write("<tr>"
                 + "    <td>" + runDto.getRunId() + "</td>"
                 + "    <td>" + runDto.getScheduleName() + "</td>"
@@ -616,12 +661,20 @@ public class LocalHtmlInspectScheduler {
             out.write("<td>"
                     + "    <form method=\"get\">"
                     + "        <div class=\"input-group\">"
-                    + "            <input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\""
+                    + "            <input type=\"hidden\" name=\"" + MONITOR_SHOW_RUNS + "\""
                     + "                   value=\"" + runDto.getScheduleName() + "\">"
-                    + "            <input type=\"hidden\" name=\"showLogs.local\" class=\"form-control\""
+                    + "            <input type=\"hidden\" name=\"" + MONITOR_SHOW_LOGS + "\""
                     + "                   value=\"" + runDto.getRunId() + "\">"
-                    + "            <span class=\"input-group-btn show-logs\">"
-                    + "                <button class=\"btn btn-primary\" type=\"submit\">logs</button>"
+                    + "            <input type=\"hidden\" name=\"" + MONITOR_DATE_FROM + "\""
+                    + "                   value=\"" + toIsoLocalDate(fromDate)  + "\">"
+                    + "            <input type=\"hidden\" name=\"" + MONITOR_TIME_FROM + "\""
+                    + "                   value=\"" + toLocalTime(fromDate)  + "\">"
+                    + "            <input type=\"hidden\" name=\"" + MONITOR_DATE_TO + "\""
+                    + "                   value=\"" + toIsoLocalDate(toDate) + "\">"
+                    + "            <input type=\"hidden\" name=\"" + MONITOR_TIME_TO + "\""
+                    + "                   value=\"" + toLocalTime(toDate) + "\">"
+                    + "            <span class=\"show-logs\">"
+                    + "                <button class=\"btn btn-primary\" type=\"submit\">Show Logs</button>"
                     + "            </span>"
                     + "        </div>"
                     + "    </form>"
