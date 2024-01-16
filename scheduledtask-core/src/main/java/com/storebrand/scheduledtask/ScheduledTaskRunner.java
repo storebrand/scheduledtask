@@ -50,7 +50,9 @@ import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
  */
 class ScheduledTaskRunner implements ScheduledTask {
     private static final Logger log = LoggerFactory.getLogger(ScheduledTaskRunner.class);
-    private static final long SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
+    private static final long SLEEP_TIME_MASTER_MAX_IN_MS = 2 * 60 * 1000; // 2 minutes
+    private static final int SLEEP_TIME_SLAVE_MASTER_LOCK_CHECK_MS = 15 * 60 * 1_000; // 15 minutes
+    private static final int ELIDED_LOG_LINES_ON_MASTER_SLEEP = 8;
 
     private final ScheduledTaskConfig _config;
     private final ScheduledTaskRegistry _scheduledTaskRegistry;
@@ -100,6 +102,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     @SuppressWarnings({ "checkstyle:IllegalCatch", "MethodLength", "PMD.AvoidBranchingStatementAsLastInLoop" })
         // We want to log everything
     void runner() {
+        int elidedSleepLogLines = 0;
         NEXTRUN:
         while (_runFlag) {
             try {
@@ -118,20 +121,30 @@ class ScheduledTaskRunner implements ScheduledTask {
                             .map(CronExpression::parse)
                             .orElse(null);
 
-                    // ?: Are we the master node
+                    // ?: Are we the master node?
                     if (_scheduledTaskRegistry.hasMasterLock()) {
                         // -> Yes, we are master and should only sleep if we are still waiting for the nextRun.
+                        // ?: Have we passed the next run timestamp?
                         if (Instant.now(_clock).isBefore(_nextRun)) {
                             // -> No, we have not yet passed the next run so we should sleep a bit
                             long millisToWait = ChronoUnit.MILLIS.between(Instant.now(_clock), _nextRun);
                             // We should only sleep only max SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS in
                             // one sleeop loop.
-                            millisToWait = Math.min(millisToWait, SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS);
+                            millisToWait = Math.min(millisToWait, SLEEP_TIME_MASTER_MAX_IN_MS);
+                            String message = "Thread '" + ScheduledTaskRunner.this.getName() + "', "
+                                    + " master node '" + Host.getLocalHostName() + "' "
+                                    + "is going to sleep for '" + millisToWait
+                                    + "' ms and wait for the next schedule run '" + _nextRun + "'.";
+                            // To avoid spamming the log too hard we only log to info every x sleep cycles.
+                            if (elidedSleepLogLines++ >= ELIDED_LOG_LINES_ON_MASTER_SLEEP) {
+                                log.info(message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
+                                elidedSleepLogLines = 0;
+                            }
+                            else {
+                                log.debug(message);
+                            }
+
                             synchronized (_syncObject) {
-                                log.debug("Thread '" + ScheduledTaskRunner.this.getName() + "', "
-                                        + " master node '" + Host.getLocalHostName() + "' "
-                                        + "is going to sleep for '" + millisToWait
-                                        + "' ms and wait for the next schedule run.");
                                 _syncObject.wait(millisToWait);
                             }
                         }
@@ -143,7 +156,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                             log.info("Thread '" + ScheduledTaskRunner.this.getName() + "', "
                                     + " slave node '" + Host.getLocalHostName() + "' "
                                     + "is going to sleep for 15 min.");
-                            _syncObject.wait(15 * 60 * 1_000);
+                            _syncObject.wait(SLEEP_TIME_SLAVE_MASTER_LOCK_CHECK_MS);
                         }
                     }
 
@@ -166,12 +179,11 @@ class ScheduledTaskRunner implements ScheduledTask {
                     // ?: Are we master?
                     if (!_scheduledTaskRegistry.hasMasterLock()) {
                         // -> No, not master at the moment.
-                        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
 
                         log.info("Thread '" + ScheduledTaskRunner.this.getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " is not currently master so restarting sleep loop, next run is set"
-                                + " to '" + nextRun + "'");
+                                + " to '" + _nextRun + "'");
                         _isRunning = false;
                         continue SLEEP_LOOP;
                     }
@@ -219,7 +231,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                             + "' with nodeName '" + Host.getLocalHostName() + "' "
                             + " is master and nextRun has passed now() exiting SLEEP_LOOP to do the schedule run ");
                     break SLEEP_LOOP;
-                }
+                } // SLEEP_LOOP end
 
                 // ?: Finally we have an option to pause the schedule, this works by only bypassing the run part and
                 // doing a new sleep cycle to the next run.
@@ -239,6 +251,8 @@ class ScheduledTaskRunner implements ScheduledTask {
                 // previous set one. In any regards we have passed the moment where the schedule should run and we
                 // have verified that we should not stop/skip the schedule
                 runTask();
+                // If the schedule goes often then there is no use in logging the "im still sleeping" log lines.
+                elidedSleepLogLines = 0;
 
                 // :: Execute retention policy
                 // TODO: Only execute at given intervals?
@@ -381,6 +395,15 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
+     * Check if the schedule task thread is active. This should in theory always be true, but if the thread has been
+     * stopped by some external means it will return false.
+     */
+    @Override
+    public boolean isThreadActive() {
+        return _runner != null && _runner.isAlive();
+    }
+
+    /**
      * Checks if this scheduler is running or if it is currently stopped. paused.
      */
     @Override
@@ -453,7 +476,24 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * Shows if the current run is taking longer time than the {@link #_config#getMaxExpectedMinutesToRun()}.
+     * Checks if this run has passed expected run time.
+     */
+    @Override
+    public boolean hasPassedExpectedRunTime(Instant lastRunStarted) {
+        // ?: Have we started at all?
+        if (lastRunStarted == null) {
+            // -> No, so we have not passed expected run time
+            return false;
+        }
+        // E-> We have started, so we should check if we have passed expected run time
+        return Instant.now(_clock).isAfter(
+                nextScheduledRun(getActiveCronExpressionInternal(), lastRunStarted)
+                // Two minute grace time
+                .plus(2, ChronoUnit.MINUTES));
+    }
+
+    /**
+     * Checks if the current run is taking longer time than the {@link #_config#getMaxExpectedMinutesToRun()}.
      */
     @Override
     public boolean isOverdue() {
@@ -549,8 +589,6 @@ class ScheduledTaskRunner implements ScheduledTask {
 
     /**
      * The time the scheduler is expected to run next.
-     *
-     * @return
      */
     Instant nextScheduledRun(CronExpression cronExpression, Instant instant) {
         // ?: Is the cronExpression null, if it is we should use the default one instead

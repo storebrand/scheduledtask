@@ -35,13 +35,13 @@ import com.storebrand.healthcheck.CheckSpecification;
 import com.storebrand.healthcheck.HealthCheckMetadata;
 import com.storebrand.healthcheck.HealthCheckRegistry;
 import com.storebrand.healthcheck.Responsible;
-import com.storebrand.scheduledtask.ScheduledTask.Recovery;
-import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTask.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
-import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduledTaskListener;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 
@@ -153,37 +153,48 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
             spec.check(Responsible.DEVELOPERS, Axis.DEGRADED_MINOR, context -> {
                 Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
                 TableBuilder tableBuilder = new TableBuilder(
-                        "Schedule",
+                        "Schedule name",
+                        "Thread running",
                         "Active",
                         "Default cron",
                         "Running",
                         "Overdue",
+                        "Passed next run",
                         "Status");
                 boolean failed = false;
                 for (Entry<String, ScheduledTask> entry : _scheduledTaskRegistry.getScheduledTasks().entrySet()) {
                     boolean scheduleFailed;
+                    // Is this schedule thread active?
+                    boolean isThreadActive = entry.getValue().isThreadActive();
+
                     // Is this schedule active?
                     boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
                     scheduleFailed = !isActive;
 
                     // has overridden CronExpression / default cron
-                    boolean defaultCron = !allSchedulesFromDb.get(entry.getKey())
-                            .getOverriddenCronExpression().isPresent();
+                    boolean defaultCron = allSchedulesFromDb.get(entry.getKey())
+                            .getOverriddenCronExpression().isEmpty();
                     scheduleFailed = scheduleFailed || !defaultCron;
 
-                    // Is this schedule overdue. This is stored in the memory version of the current run.
+                    // Has this schedule passed the next run time
+                    boolean hasPassedNextRun = entry.getValue()
+                            .hasPassedExpectedRunTime(entry.getValue().getLastRunStarted());
+
+                    // Is this schedule overdue? This is stored in the memory version of the current run.
                     // It is only overdue if it is active, is running and marked as overdue.
                     boolean isOverdue = entry.getValue().isOverdue()
                             && entry.getValue().isActive()
                             && entry.getValue().isRunning();
-                    scheduleFailed = scheduleFailed || isOverdue;
+                    scheduleFailed = scheduleFailed || isOverdue || hasPassedNextRun || !isThreadActive;
 
                     // Add a table row
                     tableBuilder.addRow(entry.getKey(),
+                            isThreadActive,
                             isActive,
                             defaultCron,
                             entry.getValue().isRunning(),
                             isOverdue,
+                            hasPassedNextRun,
                             scheduleFailed ? "WARN" : "OK");
                     failed = failed || scheduleFailed;
                 }
