@@ -31,6 +31,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
@@ -53,6 +54,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     private static final long SLEEP_TIME_MASTER_MAX_IN_MS = 2 * 60 * 1000; // 2 minutes
     private static final int SLEEP_TIME_SLAVE_MASTER_LOCK_CHECK_MS = 15 * 60 * 1_000; // 15 minutes
     private static final int ELIDED_LOG_LINES_ON_MASTER_SLEEP = 8;
+    private static String DEFAULT_LOGGER_NAME = ScheduledTask.class.getName();
 
     private final ScheduledTaskConfig _config;
     private final ScheduledTaskRegistry _scheduledTaskRegistry;
@@ -102,6 +104,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     @SuppressWarnings({ "checkstyle:IllegalCatch", "MethodLength", "PMD.AvoidBranchingStatementAsLastInLoop" })
         // We want to log everything
     void runner() {
+        MDC.put("scheduledTask", getName());
         int elidedSleepLogLines = 0;
         NEXTRUN:
         while (_runFlag) {
@@ -131,7 +134,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                             // We should only sleep only max SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS in
                             // one sleeop loop.
                             millisToWait = Math.min(millisToWait, SLEEP_TIME_MASTER_MAX_IN_MS);
-                            String message = "Thread '" + ScheduledTaskRunner.this.getName() + "', "
+                            String message = "Thread for Task '" + getName() + "', "
                                     + " master node '" + Host.getLocalHostName() + "' "
                                     + "is going to sleep for '" + millisToWait
                                     + "' ms and wait for the next schedule run '" + _nextRun + "'.";
@@ -153,7 +156,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                         // -> No, we are not master, so we should sleep for 15min or until we are master and
                         // are awoken again
                         synchronized (_syncObject) {
-                            log.info("Thread '" + ScheduledTaskRunner.this.getName() + "', "
+                            log.info("Thread for Task '" + getName() + "', "
                                     + " slave node '" + Host.getLocalHostName() + "' "
                                     + "is going to sleep for 15 min.");
                             _syncObject.wait(SLEEP_TIME_SLAVE_MASTER_LOCK_CHECK_MS);
@@ -161,7 +164,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     }
 
                     // We have exited the sleep.
-                    log.debug("Thread '" + ScheduledTaskRunner.this.getName()
+                    log.debug("Thread for Task '" + getName()
                             + "' with nodeName '" + Host.getLocalHostName() + "' "
                             + " exited the sleep.");
                     _isRunning = true;
@@ -169,7 +172,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     // ?: Check again for runThreads - as this will happen in shutdown
                     if (!_runFlag) {
                         // -> Yes, we're stopping.
-                        log.info("Thread '" + ScheduledTaskRunner.this.getName()
+                        log.info("Thread for Task '" + getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " is exiting the schedule loop.");
                         _isRunning = false;
@@ -180,7 +183,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     if (!_scheduledTaskRegistry.hasMasterLock()) {
                         // -> No, not master at the moment.
 
-                        log.info("Thread '" + ScheduledTaskRunner.this.getName()
+                        log.info("Thread for Task '" + getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " is not currently master so restarting sleep loop, next run is set"
                                 + " to '" + _nextRun + "'");
@@ -206,7 +209,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     if (_runOnce) {
                         // -> Yes, we should only run once and then continue on the normal schedule plans.
                         _scheduledTaskRepository.setRunOnce(getName(), false);
-                        log.info("Thread '" + ScheduledTaskRunner.this.getName()
+                        log.info("Thread for Task '" + getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " is set to run once (NOW) and then continue as set in "
                                 + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
@@ -217,7 +220,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     if (Instant.now(_clock).isBefore(_nextRun)) {
                         // -> No, we have not yet passed the nextRun (now is still before nextRun)
                         // so we should do another sleep cycle.
-                        log.debug("Thread '" + ScheduledTaskRunner.this.getName()
+                        log.debug("Thread for Task '" + getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
                                 + " has to sleep a bit longer "
                                 + "since we have not passed the nextRun instance.");
@@ -227,7 +230,7 @@ class ScheduledTaskRunner implements ScheduledTask {
 
                     // ----- _runFlag is still true, we are master, and nextRun is after the now(),
                     // exit the SLEEP_LOOP And run the schedule
-                    log.debug("Thread '" + ScheduledTaskRunner.this.getName()
+                    log.debug("Thread for Task '" + getName()
                             + "' with nodeName '" + Host.getLocalHostName() + "' "
                             + " is master and nextRun has passed now() exiting SLEEP_LOOP to do the schedule run ");
                     break SLEEP_LOOP;
@@ -238,7 +241,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                 if (!ScheduledTaskRunner.this._active) {
                     // -> No, we have paused the schedule so we should skip this run and do another sleep cycle.
                     Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
-                    log.info("Thread '" + ScheduledTaskRunner.this.getName()
+                    log.info("Thread for Task '" + getName()
                             + "' is currently deactivated so "
                             + "we are skipping this run and setting next run to '" + nextRun + "'");
                     _scheduledTaskRepository.updateNextRun(getName(), getOverrideExpressionAsString(), nextRun);
@@ -262,21 +265,21 @@ class ScheduledTaskRunner implements ScheduledTask {
                 // ?: Check again for runThreads - as this will happen in shutdown
                 if (!_runFlag) {
                     // -> Yes, we're stopping.
-                    log.info("Thread '" + ScheduledTaskRunner.this.getName() + " got '" + t.getClass()
+                    log.info("Thread for Task '" + getName() + " got '" + t.getClass()
                             .getSimpleName()
                             + "' from the run-loop, but runThread-flag was false, so we're evidently exiting.");
                     _isRunning = false;
                     break;
                 }
 
-                log.warn("Thread '" + ScheduledTaskRunner.this.getName() + " got a '" + t.getClass()
+                log.warn("Thread for Task '" + getName() + " got a '" + t.getClass()
                         .getSimpleName()
                         + "' from the run-loop. Chilling a little, then trying again.", t);
                 try {
                     Thread.sleep(5000);
                 }
                 catch (InterruptedException e) {
-                    log.info("Thread '" + ScheduledTaskRunner.this.getName() + " got interrupted while "
+                    log.info("Thread for Task '" + getName() + " got interrupted while "
                             + "chill-waiting after an Exception when trying to do the schedule run"
                             + ". Ignoring by looping, thus checking runThread-flag.");
                 }
@@ -285,14 +288,14 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         // Exiting loop, so clear the runner thread and log that we are now shutting down.
         _runner = null;
-        log.info("Thread '" + ScheduledTaskRunner.this.getName() + "' asked to exit, shutting down!");
+        log.info("Thread for Task '" + getName() + "' asked to exit, shutting down!");
     }
 
     /**
      * Actually runs the task, and logs if it fails.
      */
     private void runTask() {
-        log.info("Thread '" + ScheduledTaskRunner.this.getName()
+        log.info("Thread for Task '" + getName()
                 + "' is beginning to do the run according "
                 + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
         _currentRunStarted = Instant.now(_clock);
@@ -329,7 +332,7 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         _isRunning = false;
         Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
-        log.info("Thread '" + ScheduledTaskRunner.this.getName() + "' "
+        log.info("Thread for Task '" + getName() + "' "
                 + " runId '" + ctx.getRunId() + "' "
                 + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
                 + "ms to run. Setting next run to '" + nextRun + "', "
@@ -648,14 +651,16 @@ class ScheduledTaskRunner implements ScheduledTask {
             _runId = runId;
             _storebrandSchedule = storebrandSchedule;
             _clock = clock;
-            _hostname = hostname;
             _scheduledTaskRepository = scheduledTaskRepository;
+            _hostname = hostname;
             _scheduledRunDto = ScheduledRunDto.newWithStateStarted(_runId, storebrandSchedule.getName(), hostname, runStart);
         }
 
         /**
-         * Reload a previous run from the database. This run may also be ongoing meaning the schedule may still append
-         * logs and set new statuses to the run.
+         * Reload a previous (probably ongoing) run from the database. This is both used for GUI elements (look up last,
+         * and between date ranges), and for the cases where the async "dispatch" concept has been used, where a task
+         * has been e.g. send on a Mats process, and then e.g. in a later stage, or a terminator, one wants to log more,
+         * set new status, or finish the task.
          */
         private ScheduledTaskRunnerContext(ScheduledRunDto scheduledRunDto, ScheduledTaskRunner storebrandSchedule,
                 ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
@@ -690,7 +695,7 @@ class ScheduledTaskRunner implements ScheduledTask {
         @Override
         public Instant getPreviousRun() {
             return _scheduledTaskRepository.getLastRunForSchedule(_storebrandSchedule.getName())
-                    .map(scheduledRunDbo -> scheduledRunDbo.getRunStart())
+                    .map(ScheduledRunDto::getRunStart)
                     .map(localDateTime -> localDateTime.atZone(ZoneId.systemDefault()).toInstant())
                     .orElse(null);
         }
@@ -727,13 +732,41 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         @Override
         public void log(String msg) {
-            _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg);
+            String prevTaskName = MDC.get("scheduledTask");
+            MDC.put("scheduledTask", _storebrandSchedule.getName());
+            Logger stackContextLogger = LoggerFactory.getLogger(getInvocationPoint());
+            try {
+                stackContextLogger.info(msg);
+                _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg);
+            }
+            finally {
+                if (prevTaskName != null) {
+                    MDC.put("scheduledTask", prevTaskName);
+                }
+                else {
+                    MDC.remove("scheduledTask");
+                }
+            }
         }
 
         @Override
         public void log(String msg, Throwable throwable) {
-            _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg,
-                    throwableToStackTraceString(throwable));
+            String prevTaskName = MDC.get("scheduledTask");
+            MDC.put("scheduledTask", _storebrandSchedule.getName());
+            Logger stackContextLogger = LoggerFactory.getLogger(getInvocationPoint());
+            try {
+                stackContextLogger.info(msg, throwable);
+                _scheduledTaskRepository.addLogEntry(_runId, LocalDateTime.now(_clock), msg,
+                        throwableToStackTraceString(throwable));
+            }
+            finally {
+                if (prevTaskName != null) {
+                    MDC.put("scheduledTask", prevTaskName);
+                }
+                else {
+                    MDC.remove("scheduledTask");
+                }
+            }
         }
 
         @Override
@@ -767,6 +800,30 @@ class ScheduledTaskRunner implements ScheduledTask {
             log("[" + State.DISPATCHED + "] " + msg);
             return new ScheduleStatusValidResponse();
         }
+    }
+
+    /**
+     * Copied from Mats3, inspired from <a href="https://stackoverflow.com/a/11306854">Stackoverflow - Denys Séguret</a>.
+     *
+     * @return a String showing where this code was invoked from, like "Test.java.123;com.example.Test;methodName()"
+     */
+    private static String getInvocationPoint() {
+        StackTraceElement[] stElements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < stElements.length; i++) {
+            StackTraceElement ste = stElements[i];
+            if (ste.getClassName().startsWith("com.storebrand.scheduledtask.")) {
+                continue;
+            }
+            // ?: If we've come to the bottom of the stack, we did not find any non-ScheduledTask stack frames.
+            if (ste.getClassName().equals("java.lang.Thread")) {
+                // -> Yes, only found "java.lang.Thread", which means there was no non-ScheduledTask stack frames.
+                return DEFAULT_LOGGER_NAME;
+            }
+            // E-> We have an invocation point, return the class name
+            return ste.getClassName();
+        }
+        // E-> Evidently no stackframes!?
+        return DEFAULT_LOGGER_NAME;
     }
 
     /**
