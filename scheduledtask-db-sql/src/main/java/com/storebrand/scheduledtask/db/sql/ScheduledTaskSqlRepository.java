@@ -611,7 +611,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 // -> Yes, then should only keep this many
 
                 Optional<LocalDateTime> deleteOlder = findDeleteOlderForKeepMax(sqlConnection, scheduleName,
-                        retentionPolicy.getKeepMaxFailedRuns(), State.NOOP);
+                        retentionPolicy.getKeepMaxNoopRuns(), State.NOOP);
 
                 if (deleteOlder.isPresent()) {
                     deletedRecords += executeDelete(sqlConnection, scheduleName, deleteOlder.get(), State.NOOP);

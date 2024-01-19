@@ -531,15 +531,14 @@ public class LocalHtmlInspectScheduler {
             MonitorHistoricRunDto monitorHistoricRunDto =
                     MonitorHistoricRunDto.fromContext(prev, scheduleRunContext);
 
-            // ?: Is this not a NOOP run or is it the first run?
-            if (monitorHistoricRunDto.status != State.NOOP || prev == null) {
-                // Yes -> then add it to the list
-                scheduleRuns.add(monitorHistoricRunDto);
+            // ?: Is the previous run a NOOP run and this run is a NOOP run, if so then replace the previous run with
+            // this one. This causes us to collapse all subsequent NOOP
+            if (monitorHistoricRunDto.status == State.NOOP && prev != null && prev.status == State.NOOP) {
+                scheduleRuns.set(scheduleRuns.size() - 1, monitorHistoricRunDto);
             }
             else {
-                // No - then replace the previous run with this one. This causes us to collapse all subsequent NOOP
-                //      runs to a single run.
-                scheduleRuns.set(scheduleRuns.size() - 1, monitorHistoricRunDto);
+                // Either not a NOOP run or the first NOOP run after a failed/done/dispatched run so we should add it
+                scheduleRuns.add(monitorHistoricRunDto);
             }
         }
 
@@ -661,7 +660,7 @@ public class LocalHtmlInspectScheduler {
                 noopCount = " (" + runDto.getNoopCount() + " times)";
                 break;
         }
-        out.write("<tr>"
+        out.write("<tr class=\" run_status_" + runDto.getStatus() + ">"
                 + "    <td>" + runDto.getRunId() + "</td>"
                 + "    <td>" + runDto.getScheduleName() + "</td>"
                 + "    <td>" + runDto.getHostname() + "</td>"
@@ -971,9 +970,17 @@ public class LocalHtmlInspectScheduler {
 
         public static MonitorHistoricRunDto fromContext(MonitorHistoricRunDto prev, ScheduleRunContext context) {
             int noopCount = 0;
+            // ?: Do we have a prev run, and this run is a NOOP run, then we should increment the noopCount
             if (context.getStatus() == State.NOOP && prev != null) {
                 noopCount = prev.noopCount + 1;
             }
+
+            // ?: Is this the very first run where the prev is null?
+            if (prev == null && context.getStatus() == State.NOOP) {
+                // -> Yes, this is the first run, and it is a NOOP run, so we should set the noopCount to 1
+                noopCount = 1;
+            }
+
             return new MonitorHistoricRunDto(context.getRunId(),
                     context.getScheduledName(),
                     context.getHostname(),
