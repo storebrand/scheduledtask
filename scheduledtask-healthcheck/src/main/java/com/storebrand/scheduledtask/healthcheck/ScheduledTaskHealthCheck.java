@@ -19,6 +19,7 @@ package com.storebrand.scheduledtask.healthcheck;
 import static java.util.stream.Collectors.toSet;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collections;
@@ -165,7 +166,7 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
                 for (Entry<String, ScheduledTask> entry : _scheduledTaskRegistry.getScheduledTasks().entrySet()) {
                     boolean scheduleFailed;
                     // Is this schedule thread active?
-                    boolean isThreadActive = entry.getValue().isThreadActive();
+                    boolean isThreadAlive = entry.getValue().isThreadAlive();
 
                     // Is this schedule active?
                     boolean isActive = allSchedulesFromDb.get(entry.getKey()).isActive();
@@ -176,25 +177,30 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
                             .getOverriddenCronExpression().isEmpty();
                     scheduleFailed = scheduleFailed || !defaultCron;
 
+                    // Get the last run started from the database schedule run logs.
+                    Instant lastRunStarted = entry.getValue().getLastScheduleRun()
+                            .map(ScheduleRunContext::getRunStarted)
+                            .map(lastRunStart -> lastRunStart.atZone(ZoneId.systemDefault()).toInstant())
+                            .orElse(null);
                     // Has this schedule passed the next run time
-                    boolean hasPassedNextRun = entry.getValue()
-                            .hasPassedExpectedRunTime(entry.getValue().getLastRunStarted());
+                    boolean hasPassedNextRun = lastRunStarted != null && entry.getValue()
+                            .hasPassedExpectedRunTime(lastRunStarted);
 
                     // Is this schedule overdue? This is stored in the memory version of the current run.
                     // It is only overdue if it is active, is running and marked as overdue.
                     boolean isOverdue = entry.getValue().isOverdue()
                             && entry.getValue().isActive()
                             && entry.getValue().isRunning();
-                    scheduleFailed = scheduleFailed || isOverdue || hasPassedNextRun || !isThreadActive;
+                    scheduleFailed = scheduleFailed || isOverdue || hasPassedNextRun || !isThreadAlive;
 
                     // Add a table row
                     tableBuilder.addRow(entry.getKey(),
-                            isThreadActive,
-                            isActive,
-                            defaultCron,
-                            entry.getValue().isRunning(),
-                            isOverdue,
-                            hasPassedNextRun,
+                            isThreadAlive ? "✓" : "DEAD",
+                            isActive ? "✓" : "DISABLED",
+                            defaultCron ? "✓" : "OVERRIDE",
+                            entry.getValue().isRunning() ? "RUNNING" : "-",
+                            isOverdue ? "OVERDUE" : "-",
+                            hasPassedNextRun ? "MISSED SCHEDULE" : "-",
                             scheduleFailed ? "WARN" : "OK");
                     failed = failed || scheduleFailed;
                 }

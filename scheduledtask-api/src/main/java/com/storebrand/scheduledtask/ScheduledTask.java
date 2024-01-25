@@ -24,7 +24,6 @@ import java.util.Optional;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
-import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 
 /**
  * Represents a running scheduled task.
@@ -76,10 +75,10 @@ public interface ScheduledTask {
     void runNow();
 
     /**
-     * Check if the schedule task thread is active. This should in theory always be true, but if the thread has been
+     * Check if the schedule task thread is alive. This should in theory always be true, but if the thread has been
      * stopped by some external means it will return false.
      */
-    boolean isThreadActive();
+    boolean isThreadAlive();
 
     /**
      * Check if this schedule is currently set to active ie {@link #start()} (default on startup).

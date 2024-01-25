@@ -20,6 +20,7 @@ import static java.util.stream.Collectors.toList;
 
 import java.io.CharArrayWriter;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 import java.time.Clock;
 import java.time.Duration;
@@ -33,6 +34,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -108,35 +110,15 @@ public class LocalHtmlInspectScheduler {
     public void getJavascript(Writer out) throws IOException {
         // Wait for the DOM to be ready
         out.write("document.addEventListener('DOMContentLoaded', (event) => {\n");
-        // The function that closes the modalbox
-        out.write(" function closeLogModalBox() {"
-                + "    let openModals = $('.log-modal-box.show-modal');"
-                + "    openModals.each(function () {"
-                + "        let modal = $(this);"
-                + "        modal.removeClass(\"show-modal\");"
-                + "        modal.addClass(\"hide-modal\");"
-                + "    });"
-                + "}; ");
-
-        // Click listener that opens the modalbox.
-        out.write("$('.log-modal-header').click(function () {"
-                + "    let modalboxHeader = $(this);"
-                //getting all the sibling with the slide-content tag.
-                + "    let modalboxContents = modalboxHeader.siblings('.log-modal-box');"
-                // get the first child element of the header that has the clas log-modal-box (there should only be one).
-                + "    let modalBoxToShow = modalboxContents.first();"
-                // First remove all classes that is used to show and hide the modal.
-                + "    modalBoxToShow.removeClass(\"show-modal hide-modal\");"
-                // Then set the show modal for this one.
-                + "    modalBoxToShow.addClass(\"show-modal\");"
-                + "}); ");
-        // Listens for close mobalbox events (by click on the x inside the modalbox
-        out.write("$('.log-modal-content .log-modal-content-close').click(closeLogModalBox);");
         // Listen for click events on the Show all noops checkbox
         out.write("$('#" + "show-all-noops" + "').change(function() {\n"
                 + "    const parser = new URL(window.location);\n"
                 + "    parser.searchParams.set('" + INCLUDE_NOOP_PARAM + "', this.checked);\n"
                 + "    window.location = parser.href;\n"
+                + "});");
+        // Handle click event on the expandable rows
+        out.write("$('.toggle-slide').click(function(){\n"
+                + "     $(this).toggleClass('expand').nextUntil('tr.schedule-run-summary').slideToggle(100);\n"
                 + "});");
 
         // End the block wait for dom to be ready
@@ -169,6 +151,7 @@ public class LocalHtmlInspectScheduler {
         out.write(".schedules-table tbody > tr > td {"
                 + " vertical-align: inherit;"
                 + "}");
+
         // General styling for the log-content table
         out.write(".error-content .error {"
                 + "    background-repeat: no-repeat;"
@@ -179,7 +162,7 @@ public class LocalHtmlInspectScheduler {
                 + "}"
                 + ".log-content,"
                 + ".error-content {"
-                + "    max-width: 700px;"
+                + "    display: inline;"
                 + "}"
                 + ".log-content ul {"
                 + "    list-style-type: none;"
@@ -199,6 +182,9 @@ public class LocalHtmlInspectScheduler {
                 + ".log-content .log-message-and-time {"
                 + "    min-width: 400px;"
                 + "}"
+                + ".error-content-stacktrace {"
+                + "    font-family: monospace;"
+                + "}"
 
                 + ".log-content .log-time {"
                 + "    font-weight: bold;"
@@ -206,7 +192,21 @@ public class LocalHtmlInspectScheduler {
                 + "}"
                 + ".input-group .show-logs button {"
                 + "    float: right;"
-                + "}");
+                + "}"
+                + ".text-color-muted {"
+                + " color: #777;"
+                + " background-color: #F8F8F8;"
+                + "}"
+                + ".text-color-success {"
+                + " color: #3c763d;"
+                + "}"
+                + ".text-color-error {"
+                + " color: red;"
+                + "}"
+                + ".text-color-dark {"
+                + " color: #333;"
+                + "}"
+        );
         // Styling for the dateTime picker
         out.write(".historic-runs-search {"
                 + "    margin-bottom: 20px;"
@@ -261,55 +261,35 @@ public class LocalHtmlInspectScheduler {
                 + ".historic-runs-table .input-group {"
                 + "    width: 100%;"
                 + "}"
+                + ".historic-runs-table .schedule-run-summary td:first-child {"
+                + "    width: 80px;"
+                + "}"
 
         );
-        // Styling for the modal box:
-        out.write(".log-modal-header ~ .log-modal-box {"
-                + "    position: fixed;"
-                + "    z-index: 3;"
-                + "    left: 0;"
-                + "    top: 0;"
-                + "    width: 100%;"
-                + "    height: 100%;"
-                + "    overflow: auto;"
-                + "    background-color: rgb(0, 0, 0);"
-                + "    background-color: rgba(0, 0, 0, 0.4);"
+        // Styling for expand/collapse in the log table:
+        /*Fonts retrieved from https://fonts.google.com/icons (Apache 2 license)*/
+        out.write(".toggle-slide .expand-collapse-icon {"
+                + "     height: 24px;"
                 + "}"
-                + ".log-modal-header ~ .log-modal-box.show-modal {"
-                + "    display: block;"
+                + ".toggle-slide .expand-collapse-icon:after {"
+                + "     content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMCAwaDI0djI0SDBWMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTIgOGwtNiA2IDEuNDEgMS40MUwxMiAxMC44M2w0LjU5IDQuNThMMTggMTRsLTYtNnoiLz48L3N2Zz4=);"
                 + "}"
-
-                + ".log-modal-header ~ .log-modal-box.hide-modal {"
-                + "    display: none;"
+                + ".toggle-slide.expand .expand-collapse-icon:after {"
+                + "     content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMjQgMjRIMFYwaDI0djI0eiIgZmlsbD0ibm9uZSIgb3BhY2l0eT0iLjg3Ii8+PHBhdGggZD0iTTE2LjU5IDguNTlMMTIgMTMuMTcgNy40MSA4LjU5IDYgMTBsNiA2IDYtNi0xLjQxLTEuNDF6Ii8+PC9zdmc+);"
+                + "}"
+                + ".toggle-slide {"
+                + "     cursor: pointer;"
                 + "}"
 
-                + ".log-modal-header ~ .log-modal-box .log-modal-content {"
-                + "    background-color: white;"
-                + "    margin: 15% auto;"
-                + "    padding: 20px;"
-                + "    border: 1px solid gray;"
-                + "    width: 80%;"
-                + "    position: relative;"
+                + ".toggle-slide .run-id {"
+                + "     display: flex;"
+                + "     justify-content: space-between;"
+                + "     align-items: center;"
                 + "}"
-
-                + ".log-modal-content-close {"
-                + "    color: black;"
-                + "    float: right;"
-                + "    font-size: 38px;"
-                + "    font-weight: bold;"
-                + "    position: absolute;"
-                + "    top: -11px;"
-                + "    right: 10px;"
+                + ".toggle-slide + .log-lines {"
+                + "     display: none;"
                 + "}"
-
-                + ".log-modal-header:hover,"
-                + ".log-modal-header:focus,"
-                + ".log-modal-content-close:hover,"
-                + ".log-modal-content-close:focus {"
-                + "    color: black;"
-                + "    text-decoration: none;"
-                + "    cursor: pointer;"
-                + "}");
+                );
 
     }
 
@@ -355,25 +335,59 @@ public class LocalHtmlInspectScheduler {
      * After the post is done the page should be reloaded to reflect the changes.
      */
     public void post(Map <String, String[]> requestParameters, String requestBody) {
+        Map<String, String> parametersFromBody = parseXWwwFormUrlencoded(requestBody);
+        // Convert the body to an array
         // :? Should we toggle the local active state
-        if (getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM) != null) {
+        if (parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM) != null) {
             // -> Yes, toggle the active state for this instance for the given scheduler.
-            toggleActive(getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM));
+            toggleActive(parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM));
         }
 
         // :? Should we execute the scheduler
-        if (getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER) != null) {
+        if (parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER) != null) {
             // -> Yes, execute the given scheduler on all instances by calling a MATS endpoint.
-            triggerSchedule(getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER));
+            triggerSchedule(parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER));
         }
 
         // :? Should we change the cron expression
-        if (getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON) != null) {
+        if (parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME) != null
+            && parametersFromBody.containsKey(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON)) {
             // -> Yes, change the cron expression for the given scheduler.
-            String name = getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME);
-            String parameter = getParameter(requestParameters, LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON);
+            String name = parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME);
+            String parameter = parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON);
             changeChronSchedule(name, parameter);
         }
+    }
+
+    /**
+     * Helper method to parse the request parameters retrieved in the post calls. This is needed due to backwards
+     * compatibility due to the old way of parsing the request parameters. Should be removed when the
+     * {@link #html(Appendable, Map)} uses JSON to send the post calls.
+     */
+    private Map<String, String> parseXWwwFormUrlencoded(String body) {
+        Map<String, String> formDataMap = new HashMap<>();
+        String[] pairs = body.split("&");
+        for (String pair : pairs) {
+            String[] keyValue = pair.split("=");
+            // ?: Do we have a key set?
+            if (keyValue.length >= 1) {
+                String key = keyValue[0];
+                String value = null;
+                // -> Yes, we have a key set
+                // ?: Do we have a value set, we may send a parameter without a value.
+                if (keyValue.length == 2) {
+                    // -> Yes, we have a value set
+                    try {
+                        value = java.net.URLDecoder.decode(keyValue[1], "UTF-8");
+                    }
+                    catch (UnsupportedEncodingException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                formDataMap.put(key, value);
+            }
+        }
+        return formDataMap;
     }
 
     /**
@@ -607,16 +621,6 @@ public class LocalHtmlInspectScheduler {
                 + "            <div class=\"input-group\">"
                 + "                <input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\""
                 + "                       value=\"" + schedule.getSchedulerName() + "\">"
-                + (fromDate != null && toDate != null
-                ? "                <input type=\"hidden\" name=\"" + MONITOR_DATE_FROM + "\""
-                + "                       value=\"" + toIsoLocalDate(fromDate)  + "\">"
-                + "                <input type=\"hidden\" name=\"" + MONITOR_TIME_FROM + "\""
-                + "                       value=\"" + toLocalTime(fromDate)  + "\">"
-                + "                <input type=\"hidden\" name=\"" + MONITOR_DATE_TO + "\""
-                + "                       value=\"" + toIsoLocalDate(toDate) + "\">"
-                + "                <input type=\"hidden\" name=\"" + MONITOR_TIME_TO + "\""
-                + "                       value=\"" + toLocalTime(toDate) + "\">"
-                : "")
                 + "                <button class=\"btn btn-primary\" type=\"submit\">Show Run Logs</button>"
                 + "            </div>"
                 + "        </form>"
@@ -707,7 +711,7 @@ public class LocalHtmlInspectScheduler {
      *          - A schedule name to show the runs for. usually retrieved from {@link #MONITOR_SHOW_RUNS} parameter.
      * @param includeLogsForRunId
      *          - If set also retrieves the runs logs for a schedule. Usually retrieved from {@link #MONITOR_SHOW_LOGS}
-     *          parameter.
+     *          parameter. <b>This field is to be removed.</b>
      * @param includeNoop - If set to true will render all NOOP logs, if set to false it will aggregate all groups
      *          of NOOP runs into one showing a count on how many where aggregated into one.
      * @throws IOException
@@ -737,6 +741,19 @@ public class LocalHtmlInspectScheduler {
                 scheduleRuns.set(scheduleRuns.size() - 1, monitorHistoricRunDto);
             }
             else {
+                // Get the logs for this run:
+                ScheduleRunContext runInstance = schedule.getInstance(monitorHistoricRunDto.runId);
+                // ?: Did we find a runContext:
+                if (runInstance != null) {
+                    // -> Yes, we found a run instance
+                    List<MonitorHistoricRunLogEntryDto> logs = runInstance.getLogEntries()
+                            .stream().map(MonitorHistoricRunLogEntryDto::fromDto)
+                            .collect(toList());
+
+                    // Add the logs to this runDto:
+                    monitorHistoricRunDto.setLogEntries(logs);
+                }
+
                 // Either not a NOOP run OR the first NOOP run after a failed/done/dispatched run
                 // OR we should not aggregate the NOOP runs, so we should add it
                 scheduleRuns.add(monitorHistoricRunDto);
@@ -798,24 +815,6 @@ public class LocalHtmlInspectScheduler {
             return;
         }
 
-        // ?: Should we also retrieve the detailed logs for a specific runId?
-        if (includeLogsForRunId != null) {
-            // -> Yes, we should get full logs for this schedule
-            final long runId = Long.parseLong(includeLogsForRunId);
-            ScheduleRunContext instance = schedule.getInstance(runId);
-            // ?: Did we get logs for this instance
-            if (instance != null) {
-                // -> Yes we did find an instance, check if it has some logEntries
-                List<MonitorHistoricRunLogEntryDto> logs = instance.getLogEntries()
-                        .stream().map(MonitorHistoricRunLogEntryDto::fromDto)
-                        .collect(toList());
-                    scheduleRuns.stream()
-                            .filter(run -> run.getRunId() == runId)
-                            .findFirst()
-                            .ifPresent(dto -> dto.setLogEntries(logs));
-            }
-        }
-
         // ------ We have a schedule that we should show the runs for and we have some historic runs in the list.
         // Render the table header
 
@@ -833,7 +832,6 @@ public class LocalHtmlInspectScheduler {
                 + "    <td><b>Status throwable</b></td>"
                 + "    <td><b>Run start</b></td>"
                 + "    <td><b>Status time</b></td>"
-                + "    <td><b>Log</b></td>"
                 + "    </thead>");
 
         // Render each table row.
@@ -866,21 +864,26 @@ public class LocalHtmlInspectScheduler {
                 noopCount = " (" + runDto.getNoopCount() + " times)";
                 break;
         }
-        out.write("<tr class=\"" + runDto.getStatusColor() + "\">"
-                + "    <td>" + runDto.getRunId() + "</td>"
-                + "    <td>" + runDto.getScheduleName() + "</td>"
+        // ?: Should enable sliding for this row, sliding should only be enabled when NOOP count = 0 AND
+        // we have at least 1 log line to show.
+        if (runDto.getNoopCount() == 0 && !runDto.getLogEntries().isEmpty()) {
+            // -> Yes, we should enable sliding for this table row:
+            out.write("<tr class=\"schedule-run-summary toggle-slide " + runDto.getStatusColor() + "\">"
+                    + "    <td><div class=\"run-id\">" + runDto.getRunId() + "<span class=\"expand-collapse-icon\"></span></div></td>");
+        }
+        else {
+            // E-> No, we should not have sliding for this row:
+            out.write("<tr class=\"schedule-run-summary " + runDto.getStatusColor() + "\">"
+                    + "    <td>" + runDto.getRunId() + "</td>");
+        }
+
+        out.write("    <td>" + runDto.getScheduleName() + "</td>"
                 + "    <td>" + runDto.getHostname() + "</td>"
                 + "    <td>" + runDto.getStatus() + noopCount + "</td>"
                 + "    <td>" + runDto.getStatusMsg() + "</td>"
                 + "    <td>"
-                + "        <div class=\"error-content log-modal-header\">"
+                + "        <div class=\"error-content\">"
                 + "            <div class=\"content-message error\">" + runDto.getStatusStackTraceFirstLine() + "</div>"
-                + "        </div>"
-                + "        <div class=\"log-modal-box hide-modal\">"
-                + "            <div class=\"log-modal-content\">"
-                + "                <span class=\"log-modal-content-close\">&times;</span>"
-                + "                <p>" + runDto.getStatusThrowableAsHtml() + "</p>"
-                + "            </div>"
                 + "        </div>"
                 + "    </td>"
                 + "    <td>" + runDto.getRunStart() + "</td>"
@@ -892,58 +895,23 @@ public class LocalHtmlInspectScheduler {
             out.write("</tr>");
             return;
         }
-        // ?: Do we have any logs here to show?
-        else if (runDto.getLogEntries().isEmpty()) {
-            // -> NO, we do not have any logs to show so render the show logs button instead.
-            renderShowLogsButton(out, runDto, fromDate, toDate, includeNoop);
-        }
         else {
-            // E-> We have some run logs to render, so we should render these instead of the show logs button
+            // E-> We have some run logs to render, so we should render these instead of the show logs button,
+            // render inside its own <tr> so we can colspan this
+            out.write("<tr class=\"log-lines\">");
             renderLogLines(out, runDto);
+            out.write("</tr>");
         }
 
-        // Finally write the closing tr tag
-        out.write("</tr>");
-    }
-
-    /**
-     * Helper method to render the show logs button
-     */
-    private void renderShowLogsButton(Writer out, MonitorHistoricRunDto runDto, LocalDateTime fromDate, LocalDateTime toDate,
-            boolean includeNoop)
-            throws IOException {
-        // -> No, we have no logentries loaded for this run. So render the show logs button to the user can request
-        // to load the logs for this run.
-        out.write("<td>"
-                + "    <form method=\"get\">"
-                + "        <div class=\"input-group\">"
-                + "            <input type=\"hidden\" name=\"" + MONITOR_SHOW_RUNS + "\""
-                + "                   value=\"" + runDto.getScheduleName() + "\">"
-                + "            <input type=\"hidden\" name=\"" + MONITOR_SHOW_LOGS + "\""
-                + "                   value=\"" + runDto.getRunId() + "\">"
-                + "            <input type=\"hidden\" name=\"" + MONITOR_DATE_FROM + "\""
-                + "                   value=\"" + toIsoLocalDate(fromDate)  + "\">"
-                + "            <input type=\"hidden\" name=\"" + MONITOR_TIME_FROM + "\""
-                + "                   value=\"" + toLocalTime(fromDate)  + "\">"
-                + "            <input type=\"hidden\" name=\"" + MONITOR_DATE_TO + "\""
-                + "                   value=\"" + toIsoLocalDate(toDate) + "\">"
-                + "            <input type=\"hidden\" name=\"" + MONITOR_TIME_TO + "\""
-                + "                   value=\"" + toLocalTime(toDate) + "\">"
-                + "            <input type=\"hidden\" name=\"" + INCLUDE_NOOP_PARAM + "\""
-                + "                   value=\"" + includeNoop + "\">"
-                + "            <span class=\"show-logs\">"
-                + "                <button class=\"btn btn-primary\" type=\"submit\">Show Logs</button>"
-                + "            </span>"
-                + "        </div>"
-                + "    </form>"
-                + "</td>");
     }
 
     /**
      * Helper method to render the log lines
      */
     private static void renderLogLines(Writer out, MonitorHistoricRunDto runDto) throws IOException {
-        out.write("<td>"
+        // Add one empty cell, so we have the left most cell as a margin.
+        out.write("<td></td>");
+        out.write("<td colspan=\"7\">"
                 + "<div class=\"log-content\">"
                 + "<ul>");
         for (MonitorHistoricRunLogEntryDto logEntry : runDto.getLogEntries()) {
@@ -952,12 +920,8 @@ public class LocalHtmlInspectScheduler {
                     + "        <span class=\"log-time\">" + logEntry.getLogTime() + "</span>"
                     + "        <span class=\"log-message\">" + logEntry.getMessage() + "</span>"
                     + "    </div>"
-                    + "    <div class=\"error-content log-modal-header\">"
-                    + "        <div class=\"content-message error\">" + logEntry.getStackTraceFirstLine() + "</div>"
-                    + "    </div>"
-                    + "    <div class=\"log-modal-box hide-modal\">"
-                    + "        <div class=\"log-modal-content\">"
-                    + "            <span class=\"log-modal-content-close\">&times;</span>"
+                    + "    <div>"
+                    + "        <div class=\"text-color-error error-content-stacktrace\">"
                     + "            <p>" + logEntry.getStackTraceAsHtml() + "</p>"
                     + "        </div>"
                     + "    </div>"
@@ -1262,13 +1226,13 @@ public class LocalHtmlInspectScheduler {
         public String getStatusColor() {
             switch (status) {
                 case NOOP:
-                    return "text-muted";
+                    return "text-color-muted";
                 case DONE:
-                    return "text-success";
+                    return "text-color-success";
                 case FAILED:
-                    return "text-warning";
+                    return "text-color-error";
                 default:
-                    return "text-primary";
+                    return "text-color-dark";
             }
         }
 
@@ -1379,7 +1343,7 @@ public class LocalHtmlInspectScheduler {
                 return new ArrayList<>();
             }
 
-            return Arrays.asList(_stackTrace.split("\\n\\t|\\n|\\t"));
+            return Arrays.asList(_stackTrace.split("\\n"));
         }
 
         public String getStackTraceFirstLine() {
@@ -1411,7 +1375,10 @@ public class LocalHtmlInspectScheduler {
         StringBuilder out = new StringBuilder(Math.max(16, s.length()));
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c > 127 || c == '"' || c == '\'' || c == '<' || c == '>' || c == '&') {
+            if (c == '\t') {
+                out.append("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;");
+            }
+            else if (c > 127 || c == '"' || c == '\'' || c == '<' || c == '>' || c == '&') {
                 out.append("&#");
                 out.append((int) c);
                 out.append(';');

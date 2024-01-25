@@ -131,24 +131,31 @@ class ScheduledTaskRunner implements ScheduledTask {
                         if (Instant.now(_clock).isBefore(_nextRun)) {
                             // -> No, we have not yet passed the next run so we should sleep a bit
                             long millisToWait = ChronoUnit.MILLIS.between(Instant.now(_clock), _nextRun);
-                            // We should only sleep only max SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS in
-                            // one sleeop loop.
-                            millisToWait = Math.min(millisToWait, SLEEP_TIME_MASTER_MAX_IN_MS);
-                            String message = "Thread for Task '" + getName() + "', "
-                                    + " master node '" + Host.getLocalHostName() + "' "
-                                    + "is going to sleep for '" + millisToWait
-                                    + "' ms and wait for the next schedule run '" + _nextRun + "'.";
-                            // To avoid spamming the log too hard we only log to info every x sleep cycles.
-                            if (elidedSleepLogLines++ >= ELIDED_LOG_LINES_ON_MASTER_SLEEP) {
-                                log.info(message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
-                                elidedSleepLogLines = 0;
+                            // ?: Check that we have a positive number of milliseconds to wait
+                            if (millisToWait > 0) {
+                                // We should only sleep max SLEEP_LOOP_MAX_SLEEP_AMOUNT_IN_MILLISECONDS in
+                                // one sleep loop.
+                                millisToWait = Math.min(millisToWait, SLEEP_TIME_MASTER_MAX_IN_MS);
+                                String message = "Thread for Task '" + getName() + "', "
+                                        + " master node '" + Host.getLocalHostName() + "' "
+                                        + "is going to sleep for '" + millisToWait
+                                        + "' ms and wait for the next schedule run '" + _nextRun + "'.";
+                                // To avoid spamming the log too hard we only log to info every x sleep cycles.
+                                if (elidedSleepLogLines++ >= ELIDED_LOG_LINES_ON_MASTER_SLEEP) {
+                                    log.info(message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
+                                    elidedSleepLogLines = 0;
+                                }
+                                else {
+                                    log.debug(message);
+                                }
+
+                                synchronized (_syncObject) {
+                                    _syncObject.wait(millisToWait);
+                                }
                             }
                             else {
-                                log.debug(message);
-                            }
-
-                            synchronized (_syncObject) {
-                                _syncObject.wait(millisToWait);
+                                log.info("Already passed next run, so we are going to run now, millis past nextRun: "
+                                        + "[" + millisToWait + "]");
                             }
                         }
                     }
@@ -402,7 +409,7 @@ class ScheduledTaskRunner implements ScheduledTask {
      * stopped by some external means it will return false.
      */
     @Override
-    public boolean isThreadActive() {
+    public boolean isThreadAlive() {
         return _runner != null && _runner.isAlive();
     }
 

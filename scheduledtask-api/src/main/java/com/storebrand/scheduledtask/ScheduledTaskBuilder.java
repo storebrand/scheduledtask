@@ -34,7 +34,7 @@ public interface ScheduledTaskBuilder {
     Recovery DEFAULT_RECOVERY = Recovery.SELF_HEALING;
     int DEFAULT_DELETE_RUNS_AFTER_DAYS = 365;
     int DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS = 7;
-    int DEFAULT_KEEP_MAX_NOOP_RUNS = 100;
+    int DEFAULT_KEEP_MAX_NOOP_RUNS = 1440; // 1 minute runs for 24 hours
 
     /**
      * Define the maximum minutes this task is expected to run.
