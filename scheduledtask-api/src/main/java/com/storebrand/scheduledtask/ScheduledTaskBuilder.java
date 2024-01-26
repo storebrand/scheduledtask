@@ -33,8 +33,8 @@ public interface ScheduledTaskBuilder {
     Criticality DEFAULT_CRITICALITY = Criticality.IMPORTANT;
     Recovery DEFAULT_RECOVERY = Recovery.SELF_HEALING;
     int DEFAULT_DELETE_RUNS_AFTER_DAYS = 365;
-    int DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS = 7;
-    int DEFAULT_KEEP_MAX_NOOP_RUNS = 1440; // 1 minute runs for 24 hours
+    int DEFAULT_DELETE_NOOP_RUNS_AFTER_DAYS = 14;
+    int DEFAULT_KEEP_MAX_NOOP_RUNS = 2160; // 1 minute runs for 36 hours
 
     /**
      * Define the maximum minutes this task is expected to run.
@@ -139,9 +139,9 @@ public interface ScheduledTaskBuilder {
 
 
     /**
-     * Only keep this many noop runs. Older records will be deleted if there are more. This rule is set to 100 records
-     * by default. If both this and {@link #keepMaxRuns(int)} is used then both will be applied, and the lowest number
-     * will be used to determine how many to keep.
+     * Only keep this many noop runs. Older records will be deleted if there are more. This rule is set to 2160 records
+     * by default (1 minute runs for 36 hours). If both this and {@link #keepMaxRuns(int)} is used then both will be
+     * applied, and the lowest number will be used to determine how many to keep.
      *
      * @param maxNoopRuns
      *         the maximum number of noop runs we should keep records of.
