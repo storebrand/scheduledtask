@@ -170,6 +170,7 @@ class MockRunContext implements ScheduleRunContext {
     public ScheduleStatus noop(String msg) {
         _state = State.NOOP;
         _statusMessage = msg;
+        log("[" + State.DISPATCHED + "] " + msg);
         return createValidStatus();
     }
 

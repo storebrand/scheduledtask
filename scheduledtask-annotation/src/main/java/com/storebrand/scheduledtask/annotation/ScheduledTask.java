@@ -126,9 +126,9 @@ public @interface ScheduledTask {
     int keepMaxFailedRuns() default 0;
 
     /**
-     * Only keep this many noop runs. Older records will be deleted if there are more. This rule is set to 100 by
-     * default. If both this and {@link #keepMaxRuns()} is used then both will be applied, and the lowest number will be
-     * used to determine how many to keep.
+     * Only keep this many noop runs. Older records will be deleted if there are more. This rule is set to 2160 by
+     * default (1 minute runs for 36 hours). If both this and {@link #keepMaxRuns()} is used then
+     * both will be applied, and the lowest number will be used to determine how many to keep.
      */
     int keepMaxNoopRuns() default ScheduledTaskBuilder.DEFAULT_KEEP_MAX_NOOP_RUNS;
 }
