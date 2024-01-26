@@ -118,6 +118,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     }
 
                     _nextRun = scheduleFromDb.get().getNextRun();
+                    _runOnce = scheduleFromDb.get().isRunOnce();
                     // We may have set an override expression, so retrieve this and store it for use when we
                     // should update the nextRun
                     _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression()
@@ -126,10 +127,18 @@ class ScheduledTaskRunner implements ScheduledTask {
 
                     // ?: Are we the master node?
                     if (_scheduledTaskRegistry.hasMasterLock()) {
-                        // -> Yes, we are master and should only sleep if we are still waiting for the nextRun.
-                        // ?: Have we passed the next run timestamp?
-                        if (Instant.now(_clock).isBefore(_nextRun)) {
-                            // -> No, we have not yet passed the next run so we should sleep a bit
+                        // -> Yes, we are master and should only sleep if we are still waiting for the nextRun and if we
+                        // are not set to run once.
+                        if (_runOnce) {
+                            // We should run once, so we should not sleep but instead run the schedule now.
+                            log.info("Thread for Task '" + getName()
+                                    + "' with nodeName '" + Host.getLocalHostName() + "' "
+                                    + " is master and set to run once (NOW) and then continue as set in "
+                                    + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
+                        }
+                        // E-> Have we passed the next run timestamp?
+                        else if (Instant.now(_clock).isBefore(_nextRun)) {
+                            // -> No, we have not yet passed the next run, so we should sleep a bit
                             long millisToWait = ChronoUnit.MILLIS.between(Instant.now(_clock), _nextRun);
                             // ?: Check that we have a positive number of milliseconds to wait
                             if (millisToWait > 0) {

@@ -34,6 +34,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+    import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -459,7 +460,10 @@ public class LocalHtmlInspectScheduler {
         Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
         // Get all the schedules from memory
         List<MonitorScheduleDto> bindingsDtoMap = new ArrayList<>();
-        for (ScheduledTask scheduledTask : _scheduledTaskRegistry.getScheduledTasks().values()) {
+        List<ScheduledTask> scheduledTasksByName = _scheduledTaskRegistry.getScheduledTasks().values().stream()
+                .sorted(Comparator.comparing(ScheduledTask::getName, String.CASE_INSENSITIVE_ORDER))
+                .collect(toList());
+        for (ScheduledTask scheduledTask : scheduledTasksByName) {
             MonitorScheduleDto scheduleDto = new MonitorScheduleDto(scheduledTask);
             // Since the in memory can be missing some of the previous runs we need to supplement the in-memory values
             // with data from the tables stb_schedule and stb_schedule_run

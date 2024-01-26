@@ -155,7 +155,7 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
                 Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
                 TableBuilder tableBuilder = new TableBuilder(
                         "Schedule name",
-                        "Thread running",
+                        "Thread alive",
                         "Active",
                         "Default cron",
                         "Running",
