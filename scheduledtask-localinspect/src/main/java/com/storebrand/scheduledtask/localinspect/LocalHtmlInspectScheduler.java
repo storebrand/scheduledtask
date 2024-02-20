@@ -54,9 +54,9 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Will produce an "embeddable" HTML interface.
- * To use this you need to include the {@link #getJavascript(Writer)}, {@link #getStyleSheet(Writer)} and
- * {@link #createSchedulesOverview(Writer, LocalDateTime, LocalDateTime)}. The last part is to render the show runs sections that displays
- * historic runs for a schedule by using {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}
+ * To use this all GET requests should retrieve the output from  {@link #outputJavaScript(Appendable)},
+ * {@link #outputStyleSheet(Appendable)} and {@link #html(Appendable, Map)}. POST requests should be re-routed to
+ * {@link #post(Map, String)} and all DELETE and PUT requests should be re-routed to {@link #json(Appendable, Map, String)}
  * <p>
  * For now, this has been developed with a dependency on Bootstrap 3.4.1 and JQuery 1.12.4. This will be improved, so
  * the entire HTML interface is self-contained.
@@ -92,38 +92,26 @@ public class LocalHtmlInspectScheduler {
      * included as a separate file (with hard caching).
      */
     public void outputJavaScript(Appendable out) {
-        CharArrayWriter writer = new CharArrayWriter();
         try {
-            getJavascript(writer);
-            out.append(writer.toString());
-            writer.reset();
+            // Wait for the DOM to be ready
+            out.append("document.addEventListener('DOMContentLoaded', (event) => {\n");
+            // Listen for click events on the Show all noops checkbox
+            out.append("$('#" + "show-all-noops" + "').change(function() {\n"
+                    + "    const parser = new URL(window.location);\n"
+                    + "    parser.searchParams.set('" + INCLUDE_NOOP_PARAM + "', this.checked);\n"
+                    + "    window.location = parser.href;\n"
+                    + "});");
+            // Handle click event on the expandable rows
+            out.append("$('.toggle-slide').click(function(){\n"
+                    + "     $(this).toggleClass('expand').nextUntil('tr.schedule-run-summary').slideToggle(100);\n"
+                    + "});");
+
+            // End the block wait for dom to be ready
+            out.append("})");
         }
         catch (IOException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    /**
-     * Retrieve the javascript, should only be included once.
-     *
-     * Use {@link #outputStyleSheet(Appendable)} instead
-     */
-    public void getJavascript(Writer out) throws IOException {
-        // Wait for the DOM to be ready
-        out.write("document.addEventListener('DOMContentLoaded', (event) => {\n");
-        // Listen for click events on the Show all noops checkbox
-        out.write("$('#" + "show-all-noops" + "').change(function() {\n"
-                + "    const parser = new URL(window.location);\n"
-                + "    parser.searchParams.set('" + INCLUDE_NOOP_PARAM + "', this.checked);\n"
-                + "    window.location = parser.href;\n"
-                + "});");
-        // Handle click event on the expandable rows
-        out.write("$('.toggle-slide').click(function(){\n"
-                + "     $(this).toggleClass('expand').nextUntil('tr.schedule-run-summary').slideToggle(100);\n"
-                + "});");
-
-        // End the block wait for dom to be ready
-        out.write("})");
     }
 
     /**
@@ -131,167 +119,155 @@ public class LocalHtmlInspectScheduler {
      * included as a separate file (with hard caching).
      */
     public void outputStyleSheet(Appendable out) {
-        CharArrayWriter writer = new CharArrayWriter();
         try {
-            getStyleSheet(writer);
-            out.append(writer.toString());
-            writer.reset();
+            // General styling for the schedules-table
+            out.append(".schedules-table tbody > tr > td {"
+                    + " vertical-align: inherit;"
+                    + "}");
+
+            // General styling for the log-content table
+            out.append(".error-content .error {"
+                    + "    background-repeat: no-repeat;"
+                    + "    padding-left: 30px;"
+                    + "    background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMCAwaDI0djI0SDBWMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTUuNzMgM0g4LjI3TDMgOC4yN3Y3LjQ2TDguMjcgMjFoNy40NkwyMSAxNS43M1Y4LjI3TDE1LjczIDN6TTE5IDE0LjlMMTQuOSAxOUg5LjFMNSAxNC45VjkuMUw5LjEgNWg1LjhMMTkgOS4xdjUuOHoiLz48Y2lyY2xlIGN4PSIxMiIgY3k9IjE2IiByPSIxIi8+PHBhdGggZD0iTTExIDdoMnY3aC0yeiIvPjwvc3ZnPg==);"
+                    + "    margin-top: 5px;"
+                    + "    color: red;"
+                    + "}"
+                    + ".log-content,"
+                    + ".error-content {"
+                    + "    display: inline;"
+                    + "}"
+                    + ".log-content ul {"
+                    + "    list-style-type: none;"
+                    + "    padding: 0px;"
+                    + "    margin: 0px;"
+                    + "}"
+                    + ".log-content ul li {"
+                    + "    margin-bottom: 10px;"
+                    + "    border-bottom: 1px lightgray dotted;"
+                    + "}"
+                    + ".log-content ul li:last-child {"
+                    + "    margin-bottom: 0px;"
+                    + "}"
+                    + ".log-content .log-message {"
+                    + "    display:inline-block;"
+                    + "}"
+                    + ".log-content .log-message-and-time {"
+                    + "    min-width: 400px;"
+                    + "}"
+                    + ".error-content-stacktrace {"
+                    + "    font-family: monospace;"
+                    + "}"
+
+                    + ".log-content .log-time {"
+                    + "    font-weight: bold;"
+                    + "    display: block;"
+                    + "}"
+                    + ".input-group .show-logs button {"
+                    + "    float: right;"
+                    + "}"
+                    + ".text-color-muted {"
+                    + " color: #777;"
+                    + " background-color: #F8F8F8;"
+                    + "}"
+                    + ".text-color-success {"
+                    + " color: #3c763d;"
+                    + "}"
+                    + ".text-color-error {"
+                    + " color: red;"
+                    + "}"
+                    + ".text-color-dark {"
+                    + " color: #333;"
+                    + "}"
+            );
+            // Styling for the dateTime picker
+            out.append(".historic-runs-search {"
+                    + "    margin-bottom: 20px;"
+                    + "} "
+                    + ".historic-runs-search .datetimepicker {"
+                    + "    display: inline-flex;"
+                    + "    align-items: center;"
+                    + "    padding: 1px 0 2px 0;"
+                    + "    color: #555;"
+                    + "    background-color: #fff;"
+                    + "    border: 1px solid #ccc;"
+                    + "    border-radius: 4px;"
+                    + "    box-shadow: inset 0 1px 1px rgba(0,0,0,.075);"
+                    + "} "
+                    + ".historic-runs-search .datetimepicker:focus-within {"
+                    + "     border-color: #66afe9;"
+                    + "     outline: 0;"
+                    + "     box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(102,175,233,.6);"
+                    + "} "
+                    + ".historic-runs-search .datetimepicker input {"
+                    + "     font: inherit;"
+                    + "     color: inherit;"
+                    + "     appearance: none;"
+                    + "     outline: none;"
+                    + "     border: 0;"
+                    + "     background-color: transparent;"
+                    + "} "
+                    + ".historic-runs-search .datetimepicker input[type=date] {"
+                    + "     width: 13rem;"
+                    + "     padding: .25rem 0 .25rem .5rem;"
+                    + "     border-right-width: 0;"
+                    + "} "
+                    + ".historic-runs-search .datetimepicker input[type=time] {"
+                    + "     width: 7.5rem;"
+                    + "     padding: .25rem .5rem .25rem 0;"
+                    + "     border-left-width: 0;"
+                    + "} "
+                    + ".historic-runs-search .datetimepicker span {"
+                    + "     height: 1rem;"
+                    + "     margin-right: .25rem;"
+                    + "     margin-left: .25rem;"
+                    + "     border-right: 1px solid #ddd;"
+                    + "} "
+                    + ".historic-runs-search form {"
+                    + "    display: inline-block;"
+                    + "    margin-bottom: 0px;"
+                    + "}"
+                    + ".historic-runs-search .input-group {"
+                    + "    display: inline-block;"
+                    + "    margin-left: 1em;"
+                    + "}"
+                    + ".historic-runs-table .input-group {"
+                    + "    width: 100%;"
+                    + "}"
+                    + ".historic-runs-table .schedule-run-summary td:first-child {"
+                    + "    width: 80px;"
+                    + "}"
+
+            );
+            // Styling for expand/collapse in the log table:
+            /*Fonts retrieved from https://fonts.google.com/icons (Apache 2 license)*/
+            out.append(".toggle-slide .expand-collapse-icon {"
+                    + "     height: 24px;"
+                    + "}"
+                    + ".toggle-slide .expand-collapse-icon:after {"
+                    + "     content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMCAwaDI0djI0SDBWMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTIgOGwtNiA2IDEuNDEgMS40MUwxMiAxMC44M2w0LjU5IDQuNThMMTggMTRsLTYtNnoiLz48L3N2Zz4=);"
+                    + "}"
+                    + ".toggle-slide.expand .expand-collapse-icon:after {"
+                    + "     content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMjQgMjRIMFYwaDI0djI0eiIgZmlsbD0ibm9uZSIgb3BhY2l0eT0iLjg3Ii8+PHBhdGggZD0iTTE2LjU5IDguNTlMMTIgMTMuMTcgNy40MSA4LjU5IDYgMTBsNiA2IDYtNi0xLjQxLTEuNDF6Ii8+PC9zdmc+);"
+                    + "}"
+                    + ".toggle-slide {"
+                    + "     cursor: pointer;"
+                    + "}"
+
+                    + ".toggle-slide .run-id {"
+                    + "     display: flex;"
+                    + "     justify-content: space-between;"
+                    + "     align-items: center;"
+                    + "}"
+                    + ".toggle-slide + .log-lines {"
+                    + "     display: none;"
+                    + "}"
+                    );
+
         }
         catch (IOException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    /**
-     * Retrieve the stylesheet, should only be included once.
-     *
-     * Use {@link #outputStyleSheet(Appendable)} instead
-     */
-    public void getStyleSheet(Writer out) throws IOException {
-        // General styling for the schedules-table
-        out.write(".schedules-table tbody > tr > td {"
-                + " vertical-align: inherit;"
-                + "}");
-
-        // General styling for the log-content table
-        out.write(".error-content .error {"
-                + "    background-repeat: no-repeat;"
-                + "    padding-left: 30px;"
-                + "    background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMCAwaDI0djI0SDBWMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTUuNzMgM0g4LjI3TDMgOC4yN3Y3LjQ2TDguMjcgMjFoNy40NkwyMSAxNS43M1Y4LjI3TDE1LjczIDN6TTE5IDE0LjlMMTQuOSAxOUg5LjFMNSAxNC45VjkuMUw5LjEgNWg1LjhMMTkgOS4xdjUuOHoiLz48Y2lyY2xlIGN4PSIxMiIgY3k9IjE2IiByPSIxIi8+PHBhdGggZD0iTTExIDdoMnY3aC0yeiIvPjwvc3ZnPg==);"
-                + "    margin-top: 5px;"
-                + "    color: red;"
-                + "}"
-                + ".log-content,"
-                + ".error-content {"
-                + "    display: inline;"
-                + "}"
-                + ".log-content ul {"
-                + "    list-style-type: none;"
-                + "    padding: 0px;"
-                + "    margin: 0px;"
-                + "}"
-                + ".log-content ul li {"
-                + "    margin-bottom: 10px;"
-                + "    border-bottom: 1px lightgray dotted;"
-                + "}"
-                + ".log-content ul li:last-child {"
-                + "    margin-bottom: 0px;"
-                + "}"
-                + ".log-content .log-message {"
-                + "    display:inline-block;"
-                + "}"
-                + ".log-content .log-message-and-time {"
-                + "    min-width: 400px;"
-                + "}"
-                + ".error-content-stacktrace {"
-                + "    font-family: monospace;"
-                + "}"
-
-                + ".log-content .log-time {"
-                + "    font-weight: bold;"
-                + "    display: block;"
-                + "}"
-                + ".input-group .show-logs button {"
-                + "    float: right;"
-                + "}"
-                + ".text-color-muted {"
-                + " color: #777;"
-                + " background-color: #F8F8F8;"
-                + "}"
-                + ".text-color-success {"
-                + " color: #3c763d;"
-                + "}"
-                + ".text-color-error {"
-                + " color: red;"
-                + "}"
-                + ".text-color-dark {"
-                + " color: #333;"
-                + "}"
-        );
-        // Styling for the dateTime picker
-        out.write(".historic-runs-search {"
-                + "    margin-bottom: 20px;"
-                + "} "
-                + ".historic-runs-search .datetimepicker {"
-                + "    display: inline-flex;"
-                + "    align-items: center;"
-                + "    padding: 1px 0 2px 0;"
-                + "    color: #555;"
-                + "    background-color: #fff;"
-                + "    border: 1px solid #ccc;"
-                + "    border-radius: 4px;"
-                + "    box-shadow: inset 0 1px 1px rgba(0,0,0,.075);"
-                + "} "
-                + ".historic-runs-search .datetimepicker:focus-within {"
-                + "     border-color: #66afe9;"
-                + "     outline: 0;"
-                + "     box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(102,175,233,.6);"
-                + "} "
-                + ".historic-runs-search .datetimepicker input {"
-                + "     font: inherit;"
-                + "     color: inherit;"
-                + "     appearance: none;"
-                + "     outline: none;"
-                + "     border: 0;"
-                + "     background-color: transparent;"
-                + "} "
-                + ".historic-runs-search .datetimepicker input[type=date] {"
-                + "     width: 13rem;"
-                + "     padding: .25rem 0 .25rem .5rem;"
-                + "     border-right-width: 0;"
-                + "} "
-                + ".historic-runs-search .datetimepicker input[type=time] {"
-                + "     width: 7.5rem;"
-                + "     padding: .25rem .5rem .25rem 0;"
-                + "     border-left-width: 0;"
-                + "} "
-                + ".historic-runs-search .datetimepicker span {"
-                + "     height: 1rem;"
-                + "     margin-right: .25rem;"
-                + "     margin-left: .25rem;"
-                + "     border-right: 1px solid #ddd;"
-                + "} "
-                + ".historic-runs-search form {"
-                + "    display: inline-block;"
-                + "    margin-bottom: 0px;"
-                + "}"
-                + ".historic-runs-search .input-group {"
-                + "    display: inline-block;"
-                + "    margin-left: 1em;"
-                + "}"
-                + ".historic-runs-table .input-group {"
-                + "    width: 100%;"
-                + "}"
-                + ".historic-runs-table .schedule-run-summary td:first-child {"
-                + "    width: 80px;"
-                + "}"
-
-        );
-        // Styling for expand/collapse in the log table:
-        /*Fonts retrieved from https://fonts.google.com/icons (Apache 2 license)*/
-        out.write(".toggle-slide .expand-collapse-icon {"
-                + "     height: 24px;"
-                + "}"
-                + ".toggle-slide .expand-collapse-icon:after {"
-                + "     content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMCAwaDI0djI0SDBWMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTIgOGwtNiA2IDEuNDEgMS40MUwxMiAxMC44M2w0LjU5IDQuNThMMTggMTRsLTYtNnoiLz48L3N2Zz4=);"
-                + "}"
-                + ".toggle-slide.expand .expand-collapse-icon:after {"
-                + "     content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMjQgMjRIMFYwaDI0djI0eiIgZmlsbD0ibm9uZSIgb3BhY2l0eT0iLjg3Ii8+PHBhdGggZD0iTTE2LjU5IDguNTlMMTIgMTMuMTcgNy40MSA4LjU5IDYgMTBsNiA2IDYtNi0xLjQxLTEuNDF6Ii8+PC9zdmc+);"
-                + "}"
-                + ".toggle-slide {"
-                + "     cursor: pointer;"
-                + "}"
-
-                + ".toggle-slide .run-id {"
-                + "     display: flex;"
-                + "     justify-content: space-between;"
-                + "     align-items: center;"
-                + "}"
-                + ".toggle-slide + .log-lines {"
-                + "     display: none;"
-                + "}"
-                );
-
     }
 
     /**
@@ -310,18 +286,11 @@ public class LocalHtmlInspectScheduler {
         LocalDateTime showLogsToTime = timeFromParamsOrDefault(dateTo, timeTo,
                 LocalDateTime.now(_clock).plusMinutes(1));
 
-        CharArrayWriter writer = new CharArrayWriter();
         try {
-            createSchedulesOverview(writer, showLogsFromTime, showLogsToTime);
-            String schedulesOverview = writer.toString();
-            writer.reset();
-            out.append(schedulesOverview);
-            createScheduleRunsTable(writer, showLogsFromTime, showLogsToTime,
+            createSchedulesOverview(out, showLogsFromTime, showLogsToTime);
+            createScheduleRunsTable(out, showLogsFromTime, showLogsToTime,
                     showRunsForSchedule, runId, Boolean.parseBoolean(getParameter(requestParameters, INCLUDE_NOOP_PARAM))
                     );
-            String scheduleRunsTable = writer.toString();
-            writer.reset();
-            out.append(scheduleRunsTable);
 
         }
         catch (IOException e) {
@@ -402,49 +371,19 @@ public class LocalHtmlInspectScheduler {
     /**
      * Renders the main overview table where all the registered schedules are shown.
      * Here the schedule can be deactivated, triggered to run now, change schedule and button to show the
-     * {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}.
+     * {@link #createScheduleRunsTable(Appendable, LocalDateTime, LocalDateTime, String, String, boolean)}.
      * <p>
      * The <b>Show runs</b> button will return a parameter {@link #MONITOR_SHOW_RUNS}, this is then used with
-     * {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)} to renter that
+     * {@link #createScheduleRunsTable(Appendable, LocalDateTime, LocalDateTime, String, String, boolean)} to renter that
      * historic runs table.
      * <p>
      * The following parameters are returned by this tables click events:
      * <ul>
      *     <li>{@link #MONITOR_SHOW_RUNS} - Schedule name to be used with
-     *     {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}. This will render
+     *     {@link #createScheduleRunsTable(Appendable, LocalDateTime, LocalDateTime, String, String, boolean)}. This will render
      *     the historic runs for this schedule.</li>
      *     <li>{@link #MONITOR_SHOW_LOGS} - RunId to show the logs for, note the scheduleName must also be set.
-     *     is used with {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}</li>
-     *     <li>{@link #MONITOR_CHANGE_ACTIVE_PARAM} - If set is used to toggle the active state with
-     *     {@link #toggleActive(String)}</li>
-     *     <li>{@link #MONITOR_EXECUTE_SCHEDULER} - If set is used to trigger the schedule to run now. Used with
-     *     {@link #triggerSchedule(String)}</li>
-     *     <li>{@link #MONITOR_CHANGE_CRON} and {@link #MONITOR_CHANGE_CRON_SCHEDULER_NAME} - Both will be set
-     *     when a cron schedule is to be changed. Used with {@link #changeChronSchedule(String, String)}</li>
-     * </ul>
-     *
-     * To be removed, use {@link #html(Appendable, Map)} instead
-     */
-    public void createSchedulesOverview(Writer out) throws IOException {
-        createSchedulesOverview(out, null, null);
-    }
-
-    /**
-     * Renders the main overview table where all the registered schedules are shown.
-     * Here the schedule can be deactivated, triggered to run now, change schedule and button to show the
-     * {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}.
-     * <p>
-     * The <b>Show runs</b> button will return a parameter {@link #MONITOR_SHOW_RUNS}, this is then used with
-     * {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)} to renter that
-     * historic runs table.
-     * <p>
-     * The following parameters are returned by this tables click events:
-     * <ul>
-     *     <li>{@link #MONITOR_SHOW_RUNS} - Schedule name to be used with
-     *     {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}. This will render
-     *     the historic runs for this schedule.</li>
-     *     <li>{@link #MONITOR_SHOW_LOGS} - RunId to show the logs for, note the scheduleName must also be set.
-     *     is used with {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String)}</li>
+     *     is used with {@link #createScheduleRunsTable(Appendable, LocalDateTime, LocalDateTime, String, String, boolean)}</li>
      *     <li>{@link #MONITOR_CHANGE_ACTIVE_PARAM} - If set is used to toggle the active state with
      *     {@link #toggleActive(String)}</li>
      *     <li>{@link #MONITOR_EXECUTE_SCHEDULER} - If set is used to trigger the schedule to run now. Used with
@@ -455,7 +394,7 @@ public class LocalHtmlInspectScheduler {
      *
      * Use {@link #html(Appendable, Map)} instead, this is to be made private.
      */
-    public void createSchedulesOverview(Writer out, LocalDateTime fromDate, LocalDateTime toDate) throws IOException {
+    private void createSchedulesOverview(Appendable out, LocalDateTime fromDate, LocalDateTime toDate) throws IOException {
         // Get all schedules from database:
         Map<String, Schedule> allSchedulesFromDb = _scheduledTaskRegistry.getSchedulesFromRepository();
         // Get all the schedules from memory
@@ -503,42 +442,43 @@ public class LocalHtmlInspectScheduler {
         // Create a description informing of node that has the master lock.
         Optional<MasterLock> masterLock = _scheduledTaskRegistry.getMasterLock();
         // Top header informing on what node is currently master
-        out.write("<h1>Active Schedules</h1>");
+        out.append("<h1>Active Schedules</h1>");
         // ?: did we find any lock?
         if (masterLock.isEmpty()) {
             // -> No, nobody has the lock
-            out.write("<div class=\"alert alert-danger\">");
-            out.write("Unclaimed lock");
-            out.write("</div>");
+            out.append("<div class=\"alert alert-danger\">");
+            out.append("Unclaimed lock");
+            out.append("</div>");
         }
         // ?: We have a lock, but it may be old
         else if (masterLock.get().getLockLastUpdatedTime().isBefore(
                 _clock.instant().minus(5, ChronoUnit.MINUTES))) {
             // Yes-> it is an old lock
-            out.write("<div class=\"alert alert-danger\">");
-            out.write("No-one currently has the lock, last node to have it where "
-                    + "[" + masterLock.get().getNodeName() + "]");
-            out.write("</div>");
+            out.append("<div class=\"alert alert-danger\">");
+            out.append("No-one currently has the lock, last node to have it where " + "[")
+                    .append(masterLock.get().getNodeName()).append("]");
+            out.append("</div>");
         }
         else {
             // -----  Someone has the lock, and it's under 5 min old and still valid.
             // ?: Is this running node the active one?
             if (_scheduledTaskRegistry.hasMasterLock()) {
                 // -> Yes, this running node is the active one.
-                out.write("<div class=\"alert alert-success\">");
-                out.write("This node is the active node (<b>" + masterLock.get().getNodeName() + "</b>)");
-                out.write("</div>");
+                out.append("<div class=\"alert alert-success\">");
+                out.append("This node is the active node (<b>").append(masterLock.get().getNodeName()).append("</b>)");
+                out.append("</div>");
             }
             else {
                 // E-> No, this running node is not the active one
-                out.write("<div class=\"alert alert-danger\">");
-                out.write("This node is <b>NOT</b> the active node  (<b>" + masterLock.get().getNodeName() + "</b> is active)");
-                out.write("</div>");
+                out.append("<div class=\"alert alert-danger\">");
+                out.append("This node is <b>NOT</b> the active node  (<b>").append(masterLock.get().getNodeName())
+                        .append("</b> is active)");
+                out.append("</div>");
             }
         }
 
         // General information about the schedules and this page
-        out.write("<ul>"
+        out.append("<ul>"
                 + "    <li>When a scheduled method is inactive, the content is not executed on this host. (and server-status will warn)</li>"
                 + "    <li>The execution will be reset to active on application boot.</li>"
                 + "    <li>Execute to call the scheduled task directly on all servers.</li>"
@@ -553,7 +493,7 @@ public class LocalHtmlInspectScheduler {
         // change schedule and show runs
 
         // :: Table header.
-        out.write("<table class=\"schedules-table table\">"
+        out.append("<table class=\"schedules-table table\">"
                 + "    <thead>"
                 + "    <td><b>Runner Name</b></td>"
                 + "    <td><b>Active</b></td>"
@@ -576,60 +516,47 @@ public class LocalHtmlInspectScheduler {
         for (MonitorScheduleDto monitorScheduleDto : bindingsDtoMap) {
             renderScheduleTableRow(out, monitorScheduleDto, fromDate, toDate);
         }
-        out.write("</table>");
+        out.append("</table>");
     }
     /**
      * Render one row in the Scheduler table.
      */
-    public void renderScheduleTableRow(Writer out, MonitorScheduleDto schedule,
+    private void renderScheduleTableRow(Appendable out, MonitorScheduleDto schedule,
             LocalDateTime fromDate, LocalDateTime toDate) throws IOException {
-        out.write("<tr class=\"" + schedule.getRowStyle() + "\">");
-        out.write("    <td>" + schedule.getSchedulerName() + "    </td>"
-                + "    <td><b>" + schedule.isActive() + "</b></td>"
-                + "    <td>"
-                + "        <form method=\"post\">"
-                + "            <div class=\"input-group\">"
-                + "                <input type=\"hidden\" name=\"toggleActive.local\" class=\"form-control\" value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <button class=\"btn btn-default\" type=\"submit\">Toggle active</button>"
-                + "            </div>"
-                + "        </form>"
-                + "    </td>"
-                + "    <td>"
-                + "        <form method=\"post\">"
-                + "            <div class=\"input-group\">"
-                + "                <input type=\"hidden\" name=\"executeScheduler.local\" class=\"form-control\" value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <button class=\"btn btn-primary\" type=\"submit\">Execute Scheduler</button>"
-                + "            </div>"
-                + "        </form>"
-                + "    </td>"
-                + "    <td>" + schedule.getRunningAndOverdue() + "</td>"
-                + "    <td>" + schedule.getMaxExpectedMinutes() + "</td>"
-                + "    <td>" + schedule.getLastRunStarted() + "</td>"
-                + "    <td>" + schedule.getLastRunComplete() + "</td>"
-                + "    <td>" + schedule.getLastRunInHHMMSS() + "</td>"
-                + "    <td>" + schedule.getDefaultCronExpression() + "</td>"
-                + "    <td>"
-                + "        <form method=\"post\">"
-                + "            <div class=\"input-group\">"
-                + "                <input type=\"text\" name=\"changeCron.local\" class=\"form-control\" value=\"" + schedule.getActiveCronExpression() + "\">"
-                + "                <input type=\"hidden\" name=\"changeCronSchedulerName.local\" class=\"form-control\" value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <span class=\"input-group-btn\">"
-                + "                    <button class=\"btn btn-danger\" type=\"submit\">Submit</button>"
-                + "                </span>"
-                + "            </div>"
-                + "        </form>"
-                + "    </td>"
-                + "    <td>" + schedule.getNextExpectedRun() + "</td>"
-                + "    <td>"
-                + "        <form method=\"get\">"
-                + "            <div class=\"input-group\">"
-                + "                <input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\""
-                + "                       value=\"" + schedule.getSchedulerName() + "\">"
-                + "                <button class=\"btn btn-primary\" type=\"submit\">Show Run Logs</button>"
-                + "            </div>"
-                + "        </form>"
-                + "    </td>"
-                + "</tr>");
+        out.append("<tr class=\"").append(schedule.getRowStyle()).append("\">");
+        out.append("    <td>").append(schedule.getSchedulerName()).append("    </td>").append("    <td><b>")
+                .append(schedule.isActive()).append("</b></td>").append("    <td>")
+                .append("        <form method=\"post\">").append("            <div class=\"input-group\">")
+                .append("                <input type=\"hidden\" name=\"toggleActive.local\" class=\"form-control\" value=\"")
+                .append(schedule.getSchedulerName()).append("\">")
+                .append("                <button class=\"btn btn-default\" type=\"submit\">Toggle active</button>")
+                .append("            </div>").append("        </form>").append("    </td>").append("    <td>")
+                .append("        <form method=\"post\">").append("            <div class=\"input-group\">")
+                .append("                <input type=\"hidden\" name=\"executeScheduler.local\" class=\"form-control\" value=\"")
+                .append(schedule.getSchedulerName()).append("\">")
+                .append("                <button class=\"btn btn-primary\" type=\"submit\">Execute Scheduler</button>")
+                .append("            </div>").append("        </form>").append("    </td>").append("    <td>")
+                .append(schedule.getRunningAndOverdue()).append("</td>").append("    <td>")
+                .append(schedule.getMaxExpectedMinutes()).append("</td>").append("    <td>")
+                .append(schedule.getLastRunStarted()).append("</td>").append("    <td>")
+                .append(schedule.getLastRunComplete()).append("</td>").append("    <td>")
+                .append(schedule.getLastRunInHHMMSS()).append("</td>").append("    <td>")
+                .append(schedule.getDefaultCronExpression()).append("</td>").append("    <td>")
+                .append("        <form method=\"post\">").append("            <div class=\"input-group\">")
+                .append("                <input type=\"text\" name=\"changeCron.local\" class=\"form-control\" value=\"")
+                .append(schedule.getActiveCronExpression()).append("\">")
+                .append("                <input type=\"hidden\" name=\"changeCronSchedulerName.local\" class=\"form-control\" value=\"")
+                .append(schedule.getSchedulerName()).append("\">")
+                .append("                <span class=\"input-group-btn\">")
+                .append("                    <button class=\"btn btn-danger\" type=\"submit\">Submit</button>")
+                .append("                </span>").append("            </div>").append("        </form>")
+                .append("    </td>").append("    <td>").append(schedule.getNextExpectedRun()).append("</td>")
+                .append("    <td>").append("        <form method=\"get\">")
+                .append("            <div class=\"input-group\">")
+                .append("                <input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\"")
+                .append("                       value=\"").append(schedule.getSchedulerName()).append("\">")
+                .append("                <button class=\"btn btn-primary\" type=\"submit\">Show Run Logs</button>")
+                .append("            </div>").append("        </form>").append("    </td>").append("</tr>");
     }
 
     // ===== Render the logs (historic runs) for one given schedule ================================
@@ -691,43 +618,18 @@ public class LocalHtmlInspectScheduler {
      *          - A schedule name to show the runs for. usually retrieved from {@link #MONITOR_SHOW_RUNS} parameter.
      * @param includeLogsForRunId
      *          - If set also retrieves the runs logs for a schedule. Usually retrieved from {@link #MONITOR_SHOW_LOGS}
-     *          parameter.
-     * @throws IOException
-     *
-     * Use {@link #createScheduleRunsTable(Writer, LocalDateTime, LocalDateTime, String, String, boolean)}
-     * instead, is to be removed.
-     */
-    public void createScheduleRunsTable(Writer out, LocalDateTime fromDate, LocalDateTime toDate,
-            String scheduleName, String includeLogsForRunId) throws IOException {
-        createScheduleRunsTable(out, fromDate, toDate, scheduleName, includeLogsForRunId, false);
-    }
-
-    /**
-     * Constructs the table where historic runs are shown.
-     *
-     * @param out
-     *          - Where the html for this table are written back.
-     * @param fromDate
-     *          - A {@link LocalDateTime} to filter by from date on when to show the historic runs.
-     * @param toDate
-     *          - A {@link LocalDateTime} to filter to date on when to show the historic runs.
-     * @param scheduleName
-     *          - A schedule name to show the runs for. usually retrieved from {@link #MONITOR_SHOW_RUNS} parameter.
-     * @param includeLogsForRunId
-     *          - If set also retrieves the runs logs for a schedule. Usually retrieved from {@link #MONITOR_SHOW_LOGS}
      *          parameter. <b>This field is to be removed.</b>
      * @param includeNoop - If set to true will render all NOOP logs, if set to false it will aggregate all groups
      *          of NOOP runs into one showing a count on how many where aggregated into one.
-     * @throws IOException
      */
-    public void createScheduleRunsTable(Writer out, LocalDateTime fromDate, LocalDateTime toDate,
+    private void createScheduleRunsTable(Appendable out, LocalDateTime fromDate, LocalDateTime toDate,
             String scheduleName, String includeLogsForRunId, boolean includeNoop) throws IOException {
         ScheduledTask schedule = _scheduledTaskRegistry.getScheduledTask(scheduleName);
 
         // ?: Did we get a schedule?
         if (schedule == null) {
             // -> No name where set so render nothing
-            out.write("");
+            out.append("");
             return;
         }
 
@@ -765,57 +667,46 @@ public class LocalHtmlInspectScheduler {
         }
 
         // We got a schedule name, check to see if we found it.
-        out.write("<h2>Run logs for schedule: " + scheduleName + "</h2>");
+        out.append("<h2>Run logs for schedule: ").append(scheduleName).append("</h2>");
 
         // Show the timespan on when we are retrieving the historic runs
-        out.write("<div class=\"historic-runs-search\">Run start from "
+        out.append("<div class=\"historic-runs-search\">Run start from "
                 + "<form method=\"get\">");
         // Inspired from https://codepen.io/herteleo/pen/LraqoZ, this uses date and time html tags that should be
         // supported by all major browsers. This is then styled to "look" as two buttons connected to one and creating
         // a single dateTime field. Ideally this can be replaced with datetime-local when safari and firefox supports it
         // (if they ever do).
-        out.write("<div class=\"datetimepicker\">"
-                + "     <input type=\"date\" name=\"" + MONITOR_DATE_FROM + "\" id=\"date-from\" value=\""
-                + toIsoLocalDate(fromDate) + "\">"
-                + "     <span></span>"
-                + "     <input type=\"time\" name=\"" + MONITOR_TIME_FROM + "\" id=\"time-from\" value=\""
-                + toLocalTime(fromDate) + "\">"
-                + "</div>");
-        out.write(" to ");
+        out.append("<div class=\"datetimepicker\">" + "     <input type=\"date\" name=\"" + MONITOR_DATE_FROM
+                        + "\" id=\"date-from\" value=\"").append(toIsoLocalDate(fromDate)).append("\">")
+                .append("     <span></span>").append("     <input type=\"time\" name=\"").append(MONITOR_TIME_FROM)
+                .append("\" id=\"time-from\" value=\"").append(toLocalTime(fromDate)).append("\">").append("</div>");
+        out.append(" to ");
 
-        out.write("<div class=\"datetimepicker\">"
-                + "     <input type=\"date\" name=\"" + MONITOR_DATE_TO + "\" id=\"date-to\" value=\"" + toIsoLocalDate(
-                toDate) + "\">"
-                + "     <span></span>"
-                + "     <input type=\"time\" name=\"" + MONITOR_TIME_TO + "\" id=\"time-to\" value=\"" + toLocalTime(
-                toDate) + "\">"
-                + "</div>");
-        out.write("<div class=\"input-group\">"
-                + "<input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\" value=\"" + scheduleName
-                + "\">"
-                + "<button class=\"btn btn-primary\" type=\"submit\">Search</button>"
-                + "</div>"
-                + "</form>");
-        out.write("<div class=\"input-group\">"
-                + "    <form method=\"get\">"
-                + "        <input type=\"hidden\" name=\"" + MONITOR_SHOW_RUNS + "\""
-                + "               value=\"" + scheduleName + "\">"
-                + "        <span class=\"reset-button\">"
-                + "            <button class=\"btn btn-default\" type=\"submit\">Reset</button>"
-                + "        </span>"
-                + "    </form>"
-                + "</div>");
-        out.write("<div class=\"input-group\">"
-                + "        <input type=\"checkbox\" value=\"all-noops\" id=\"show-all-noops\""
-                + (includeNoop ? " checked" : "") + ">"
-                + "        <label for=\"" + "show-all-noops" + "\">Show all NOOPs</label>"
-                + "</div>");
-        out.write("</div>");
+        out.append("<div class=\"datetimepicker\">" + "     <input type=\"date\" name=\"" + MONITOR_DATE_TO
+                        + "\" id=\"date-to\" value=\"").append(toIsoLocalDate(
+                        toDate)).append("\">").append("     <span></span>").append("     <input type=\"time\" name=\"")
+                .append(MONITOR_TIME_TO).append("\" id=\"time-to\" value=\"").append(toLocalTime(
+                        toDate)).append("\">").append("</div>");
+        out.append("<div class=\"input-group\">"
+                        + "<input type=\"hidden\" name=\"showRuns.local\" class=\"form-control\" value=\"").append(scheduleName)
+                .append("\">").append("<button class=\"btn btn-primary\" type=\"submit\">Search</button>")
+                .append("</div>").append("</form>");
+        out.append(
+                        "<div class=\"input-group\">" + "    <form method=\"get\">" + "        <input type=\"hidden\" name=\""
+                                + MONITOR_SHOW_RUNS + "\"" + "               value=\"").append(scheduleName).append("\">")
+                .append("        <span class=\"reset-button\">")
+                .append("            <button class=\"btn btn-default\" type=\"submit\">Reset</button>")
+                .append("        </span>").append("    </form>").append("</div>");
+        out.append("<div class=\"input-group\">"
+                        + "        <input type=\"checkbox\" value=\"all-noops\" id=\"show-all-noops\"")
+                .append(includeNoop ? " checked" : "").append(">").append("        <label for=\"")
+                .append("show-all-noops").append("\">Show all NOOPs</label>").append("</div>");
+        out.append("</div>");
 
         // ?: Is there any schedule runs to show?
         if (scheduleRuns.isEmpty()) {
             // -> No, there is no schedule runs to show
-            out.write("<div class=\"alert alert-info\">No runs found!</div>");
+            out.append("<div class=\"alert alert-info\">No runs found!</div>");
             return;
         }
 
@@ -826,7 +717,7 @@ public class LocalHtmlInspectScheduler {
         // (IE pressed the show logs button). We do this due to the schedules may contain huge number of logs
 
         // :: Table header
-        out.write("<table class=\"historic-runs-table table\">"
+        out.append("<table class=\"historic-runs-table table\">"
                 + "    <thead>"
                 + "    <td><b>RunId</b></td>"
                 + "    <td><b>Scheduler name</b></td>"
@@ -842,7 +733,7 @@ public class LocalHtmlInspectScheduler {
         for (MonitorHistoricRunDto runDto : scheduleRuns) {
             renderScheduleRunsRow(out, runDto, fromDate, toDate, includeNoop);
         }
-        out.write("</table>");
+        out.append("</table>");
     }
 
     private String toLocalTime(LocalDateTime dateTime) {
@@ -853,7 +744,7 @@ public class LocalHtmlInspectScheduler {
         return dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 
-    public void renderScheduleRunsRow(Writer out, MonitorHistoricRunDto runDto,
+    private void renderScheduleRunsRow(Appendable out, MonitorHistoricRunDto runDto,
             LocalDateTime fromDate, LocalDateTime toDate, boolean includeNoop) throws IOException {
         // We collapse all noop runs to the latest one, so we should render the noop count if we have any.
         String noopCount;
@@ -872,39 +763,38 @@ public class LocalHtmlInspectScheduler {
         // we have at least 1 log line to show.
         if (runDto.getNoopCount() == 0 && !runDto.getLogEntries().isEmpty()) {
             // -> Yes, we should enable sliding for this table row:
-            out.write("<tr class=\"schedule-run-summary toggle-slide " + runDto.getStatusColor() + "\">"
-                    + "    <td><div class=\"run-id\">" + runDto.getRunId() + "<span class=\"expand-collapse-icon\"></span></div></td>");
+            out.append("<tr class=\"schedule-run-summary toggle-slide ").append(runDto.getStatusColor()).append("\">")
+                    .append("    <td><div class=\"run-id\">").append(String.valueOf(runDto.getRunId()))
+                    .append("<span class=\"expand-collapse-icon\"></span></div></td>");
         }
         else {
             // E-> No, we should not have sliding for this row:
-            out.write("<tr class=\"schedule-run-summary " + runDto.getStatusColor() + "\">"
-                    + "    <td>" + runDto.getRunId() + "</td>");
+            out.append("<tr class=\"schedule-run-summary ").append(runDto.getStatusColor()).append("\">")
+                    .append("    <td>").append(String.valueOf(runDto.getRunId())).append("</td>");
         }
 
-        out.write("    <td>" + runDto.getScheduleName() + "</td>"
-                + "    <td>" + runDto.getHostname() + "</td>"
-                + "    <td>" + runDto.getStatus() + noopCount + "</td>"
-                + "    <td>" + runDto.getStatusMsg() + "</td>"
-                + "    <td>"
-                + "        <div class=\"error-content\">"
-                + "            <div class=\"content-message error\">" + runDto.getStatusStackTraceFirstLine() + "</div>"
-                + "        </div>"
-                + "    </td>"
-                + "    <td>" + runDto.getRunStart() + "</td>"
-                + "    <td>" + runDto.getStatusTime() + "</td>");
+        out.append("    <td>").append(runDto.getScheduleName()).append("</td>").append("    <td>")
+                .append(runDto.getHostname()).append("</td>").append("    <td>")
+                .append(String.valueOf(runDto.getStatus())).append(noopCount).append("</td>").append("    <td>")
+                .append(runDto.getStatusMsg()).append("</td>").append("    <td>")
+                .append("        <div class=\"error-content\">")
+                .append("            <div class=\"content-message error\">")
+                .append(runDto.getStatusStackTraceFirstLine()).append("</div>").append("        </div>")
+                .append("    </td>").append("    <td>").append(String.valueOf(runDto.getRunStart())).append("</td>")
+                .append("    <td>").append(String.valueOf(runDto.getStatusTime())).append("</td>");
 
         // ?: If this is a aggregated NOOP run we should not render the log lines nor the show logs button
         if (runDto.noopCount > 0) {
             // -> Yes, this is an aggregated NOOP run, and we should not show the log lines nor the show logs button.
-            out.write("</tr>");
+            out.append("</tr>");
             return;
         }
         else {
             // E-> We have some run logs to render, so we should render these instead of the show logs button,
             // render inside its own <tr> so we can colspan this
-            out.write("<tr class=\"log-lines\">");
+            out.append("<tr class=\"log-lines\">");
             renderLogLines(out, runDto);
-            out.write("</tr>");
+            out.append("</tr>");
         }
 
     }
@@ -912,27 +802,23 @@ public class LocalHtmlInspectScheduler {
     /**
      * Helper method to render the log lines
      */
-    private static void renderLogLines(Writer out, MonitorHistoricRunDto runDto) throws IOException {
+    private static void renderLogLines(Appendable out, MonitorHistoricRunDto runDto) throws IOException {
         // Add one empty cell, so we have the left most cell as a margin.
-        out.write("<td></td>");
-        out.write("<td colspan=\"7\">"
+        out.append("<td></td>");
+        out.append("<td colspan=\"7\">"
                 + "<div class=\"log-content\">"
                 + "<ul>");
         for (MonitorHistoricRunLogEntryDto logEntry : runDto.getLogEntries()) {
-            out.write("<li>"
-                    + "    <div class=\"log-message-and-time\">"
-                    + "        <span class=\"log-time\">" + logEntry.getLogTime() + "</span>"
-                    + "        <span class=\"log-message\">" + logEntry.getMessage() + "</span>"
-                    + "    </div>"
-                    + "    <div>"
-                    + "        <div class=\"text-color-error error-content-stacktrace\">"
-                    + "            <p>" + logEntry.getStackTraceAsHtml() + "</p>"
-                    + "        </div>"
-                    + "    </div>"
-                    + "</li>");
+            out.append("<li>" + "    <div class=\"log-message-and-time\">" + "        <span class=\"log-time\">")
+                    .append(String.valueOf(logEntry.getLogTime())).append("</span>")
+                    .append("        <span class=\"log-message\">").append(logEntry.getMessage()).append("</span>")
+                    .append("    </div>").append("    <div>")
+                    .append("        <div class=\"text-color-error error-content-stacktrace\">")
+                    .append("            <p>").append(logEntry.getStackTraceAsHtml()).append("</p>")
+                    .append("        </div>").append("    </div>").append("</li>");
         }
 
-        out.write("</ul>"
+        out.append("</ul>"
                 + "</div>"
                 + "</td>");
     }
@@ -943,7 +829,7 @@ public class LocalHtmlInspectScheduler {
      * Toggles the {@link ScheduledTask#isActive()} flag for one schedule. Setting this to false will temporarily
      * disable the execution of the supplied runnable for the schedule.
      */
-    public void toggleActive(String scheduleName) {
+    private void toggleActive(String scheduleName) {
         _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             // Toggle the state
             if (scheduled.isActive()) {
@@ -961,7 +847,7 @@ public class LocalHtmlInspectScheduler {
      * it can take up to 2 min before it will trigger due to it has to notify the Active node to run it now
      * via the db and the Active node check the db every 2 min.
      */
-    public void triggerSchedule(String scheduleName) {
+    private void triggerSchedule(String scheduleName) {
         _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
             scheduled.runNow();
             return scheduled;
@@ -972,7 +858,7 @@ public class LocalHtmlInspectScheduler {
      * Sets a new cron expression for a schedule.
      * To reset it to the default schedule set this to <b>null</b> or an empty string.
      */
-    public void changeChronSchedule(String scheduleName, String cronExpression) {
+    private void changeChronSchedule(String scheduleName, String cronExpression) {
         String newCron;
         // ?: Is the cronExpression set and does it have a value? If it does it mean we should expect it to be
         // a valid cronExpression.
