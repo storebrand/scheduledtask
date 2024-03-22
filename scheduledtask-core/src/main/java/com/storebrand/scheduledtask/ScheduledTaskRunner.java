@@ -278,13 +278,15 @@ class ScheduledTaskRunner implements ScheduledTask {
                 _scheduledTaskRepository.executeRetentionPolicy(getName(), _config.getRetentionPolicy());
             }
             catch (Throwable t) {
+                // Since we got an exception, we are not currently running the schedule:
+                _isRunning = false;
+
                 // ?: Check again for runThreads - as this will happen in shutdown
                 if (!_runFlag) {
                     // -> Yes, we're stopping.
                     log.info("Thread for Task '" + getName() + " got '" + t.getClass()
                             .getSimpleName()
                             + "' from the run-loop, but runThread-flag was false, so we're evidently exiting.");
-                    _isRunning = false;
                     break;
                 }
 
@@ -530,6 +532,13 @@ class ScheduledTaskRunner implements ScheduledTask {
         // Is this schedule started at all?
         if (_currentRunStarted == null) {
             // ->NO, so it is not overdue
+            return Optional.empty();
+        }
+
+        // ?: Is _lastRunCompleted set and is currentRunStarted before _lastRunCompleted.
+        // If so, it means we are not currently running
+        if (_lastRunCompleted != null && _currentRunStarted.isBefore(_lastRunCompleted)) {
+            // -> Yes, we are not currently running, so we are not overdue
             return Optional.empty();
         }
 
