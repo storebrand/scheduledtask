@@ -567,6 +567,14 @@ class SpringCronUtils {
                 throw new IllegalArgumentException(String.format(
                         "Cron expression must consist of 6 fields (found %d in \"%s\")", fields.length, expression));
             }
+
+            // We only accept 0 as input for the seconds' field.
+            String conSeconds = fields[0];
+            if (!"0".equals(conSeconds)) {
+                throw new IllegalArgumentException(String.format("Cron expression must have seconds field set to 0 "
+                        + "(found \"%s\" seconds in \"%s\")", conSeconds, expression));
+            }
+
             try {
                 CronField seconds = CronField.parseSeconds(fields[0]);
                 CronField minutes = CronField.parseMinutes(fields[1]);
