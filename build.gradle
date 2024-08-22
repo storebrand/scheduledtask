@@ -18,15 +18,19 @@ plugins {
     id "com.github.spotbugs" version "5.0.5"
 }
 
+// GradleWrapper version specifier.
+wrapper { gradleVersion = "7.3.3" }
+
 allprojects {
     group 'com.storebrand.scheduledtask'
-    version '0.1.8-SNAPSHOT'
+    version '0.1.8'
 }
 
 subprojects {
     apply plugin: 'eclipse'
     apply plugin: 'idea'
     apply plugin: 'java-library'
+    apply plugin: 'signing'
     apply plugin: 'maven-publish'
     apply plugin: 'com.github.spotbugs'
 
@@ -55,7 +59,7 @@ subprojects {
     ext {
         slf4jVersion = '1.7.36'
         junitVersion = '5.8.2'
-        healthCheckVersion = '0.4.+'
+        healthCheckVersion = '0.4.1+2024-05-07'
         springVersion = '5.3.20'
         javaxInjectVersion = '1'
         logbackClassicVersion = '1.2.11'
@@ -69,9 +73,7 @@ subprojects {
 
     project.buildDir = 'build-gradle'
 
-    repositories {
-        mavenCentral()
-    }
+    repositories { mavenCentral() }
 
     task allDependencies(type: DependencyReportTask) {}
 
@@ -87,25 +89,79 @@ subprojects {
         }
     }
 
+    signing {
+        // using findProperty(..) to be able to build without it being defined.
+        def signingKeyId = findProperty("signingKeyId") as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT_"
+        def signingKey = findProperty("signingKey") as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT_"
+        def signingPassword = findProperty("signingPassword") as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT_"
+        useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
+
+        sign publishing.publications
+    }
+
     publishing {
         publications {
             mavenJava(MavenPublication) {
                 pom {
-                    name = 'scheduledtask'
-                    description = 'Scheduled tasks for services.'
+                    name = 'Storebrand ScheduledTask'
+                    description = 'Library for scheduling recurring tasks in a reliable way .'
+                    url = 'https://github.com/storebrand/scheduledtask'
+                    licenses {
+                        license {
+                            name = 'Apache License 2.0'
+                            url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id = 'DagBertelsen'
+                            name = 'Dag Bertelsen'
+                            email = 'dabe@dagbertelsen.com'
+                        }
+                        developer {
+                            id = 'khiim'
+                            name = 'Kristian Hiim'
+                            email = 'kristian@hiim.no'
+                        }
+                        developer {
+                            id = 'stolsvik'
+                            name = 'Endre Stølsvik'
+                            email = 'endre@stolsvik.com'
+                        }
+                    }
+                    scm {
+                        connection = 'scm:git:https://github.com/storebrand/scheduledtask.git'
+                        developerConnection = 'scm:git:ssh://github.com:storebrand/scheduledtask.git'
+                        url = 'https://github.com/storebrand/scheduledtask'
+                    }
                 }
                 from components.java
             }
         }
+        repositories {
+            maven {
+                name 'SonatypeOSSRHSnapshot'
+                // NOTE: GroupId no.storebrand uses "oss.sonatype.org", while com.storebrand uses "s01.oss.sonatype.org"
+                url 'https://s01.oss.sonatype.org/content/repositories/snapshots'
+                credentials {
+                    // using findProperty(..) to be able to build without it being defined.
+                    username findProperty('sonatypeUsername') as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT_"
+                    password findProperty('sonatypePassword') as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT_"
+                }
+            }
+            maven {
+                name 'SonatypeOSSRHStaging'
+                // NOTE: GroupId no.storebrand uses "oss.sonatype.org", while com.storebrand uses "s01.oss.sonatype.org"
+                url 'https://s01.oss.sonatype.org/service/local/staging/deploy/maven2'
+                credentials {
+                    // using findProperty(..) to be able to build without it being defined.
+                    username findProperty('sonatypeUsername') as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT"
+                    password findProperty('sonatypePassword') as String ?: "Either project prop, or env with prefix ORG_GRADLE_PROJECT"
+                }
+            }
+        }
     }
-
-    // ------------------------------------------------
-    // -- Release configuration. The release file is not checked in to version control, and should
-    //    instead be kept locally to configure how to deploy this.
-    if (file("${ rootProject.projectDir }/repositories.gradle").exists()) {
-        apply from: "${ rootProject.projectDir }/repositories.gradle"
-    }
+    // "Alias-tasks" to publish to Sonatype's OSSRH (OSS Repository Hosting), Snapshot and Staging
+    task publishSnapshot(dependsOn: [publishAllPublicationsToSonatypeOSSRHSnapshotRepository])
+    task publishStaging(dependsOn: [publishAllPublicationsToSonatypeOSSRHStagingRepository])
 }
-
-// GradleWrapper version specifier.
-wrapper { gradleVersion = "7.3.3" }
