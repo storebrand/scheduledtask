@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -483,6 +484,11 @@ class ScheduledTaskRunner implements ScheduledTask {
                         _scheduledTaskRepository, _clock))
                 .collect(toList());
 
+    }
+
+    @Override
+    public Map<Long, List<LogEntry>> getLogEntriesByRunId(LocalDateTime from, LocalDateTime to) {
+        return _scheduledTaskRepository.getLogEntriesByRunId(getName(), from, to);
     }
 
     /**

@@ -193,6 +193,14 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
     }
 
     @Override
+    public Map<Long, List<LogEntry>> getLogEntriesByRunId(String scheduleName, LocalDateTime from, LocalDateTime to) {
+        long logId = _logIdGenerator.incrementAndGet();
+        List<LogEntry> logs = _logs.compute(logId,
+                (id, existingLogs) -> existingLogs != null ? existingLogs : new ArrayList<>());
+        return Map.of(logId, logs);
+    }
+
+    @Override
     public void addLogEntry(long runId, LocalDateTime logTime, String message, String stackTrace) {
         _logs.compute(runId, (id, existingLogs) -> {
             List<LogEntry> logs = existingLogs != null ? existingLogs : new ArrayList<>();

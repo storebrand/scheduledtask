@@ -177,6 +177,17 @@ public interface ScheduledTaskRepository {
      */
     List<ScheduledRunDto> getScheduleRunsBetween(String scheduleName, LocalDateTime from, LocalDateTime to);
 
+
+    /**
+     * Get all {@link ScheduledRunDto} between a given timespan including the logs for each run.
+     *
+     * @param from
+     *         - from time and including
+     * @param to
+     *         - to and including
+     */
+    Map<Long,List<LogEntry>> getLogEntriesByRunId(String scheduleName, LocalDateTime from, LocalDateTime to);
+
     /**
      * Add a log entry to a specified scheduled task run, by using the scheduled runs instanceId.
      * @param runId

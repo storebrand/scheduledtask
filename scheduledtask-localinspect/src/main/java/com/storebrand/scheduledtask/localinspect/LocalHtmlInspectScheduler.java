@@ -18,10 +18,8 @@ package com.storebrand.scheduledtask.localinspect;
 
 import static java.util.stream.Collectors.toList;
 
-import java.io.CharArrayWriter;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.io.Writer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -635,6 +633,7 @@ public class LocalHtmlInspectScheduler {
 
         // Get the historic runs for this schedule:
         List<MonitorHistoricRunDto> scheduleRuns = new ArrayList<>();
+        Map<Long, List<LogEntry>> logEntriesByRunId = schedule.getLogEntriesByRunId(fromDate, toDate);
         for (ScheduleRunContext scheduleRunContext : schedule.getAllScheduleRunsBetween(fromDate, toDate)) {
             // Get the previous run, if any
             MonitorHistoricRunDto prev = scheduleRuns.isEmpty() ? null : scheduleRuns.get(scheduleRuns.size() - 1);
@@ -647,17 +646,14 @@ public class LocalHtmlInspectScheduler {
                 scheduleRuns.set(scheduleRuns.size() - 1, monitorHistoricRunDto);
             }
             else {
-                // Get the logs for this run:
-                ScheduleRunContext runInstance = schedule.getInstance(monitorHistoricRunDto.runId);
-                // ?: Did we find a runContext:
-                if (runInstance != null) {
-                    // -> Yes, we found a run instance
-                    List<MonitorHistoricRunLogEntryDto> logs = runInstance.getLogEntries()
-                            .stream().map(MonitorHistoricRunLogEntryDto::fromDto)
-                            .collect(toList());
-
-                    // Add the logs to this runDto:
-                    monitorHistoricRunDto.setLogEntries(logs);
+                // ?: Did we find the logs for this runId:
+                if (logEntriesByRunId.containsKey(scheduleRunContext.getRunId())) {
+                    // -> Yes, we found the logs to add these to the monitorRunDto
+                    monitorHistoricRunDto.setLogEntries(
+                            logEntriesByRunId.get(scheduleRunContext.getRunId()).stream()
+                                    .map(MonitorHistoricRunLogEntryDto::fromDto)
+                                    .collect(toList())
+                    );
                 }
 
                 // Either not a NOOP run OR the first NOOP run after a failed/done/dispatched run
@@ -811,7 +807,7 @@ public class LocalHtmlInspectScheduler {
         for (MonitorHistoricRunLogEntryDto logEntry : runDto.getLogEntries()) {
             out.append("<li>" + "    <div class=\"log-message-and-time\">" + "        <span class=\"log-time\">")
                     .append(String.valueOf(logEntry.getLogTime())).append("</span>")
-                    .append("        <span class=\"log-message\">").append(logEntry.getMessage()).append("</span>")
+                    .append("        <span class=\"log-message\">").append(logEntry.getMessageAsHtml()).append("</span>")
                     .append("    </div>").append("    <div>")
                     .append("        <div class=\"text-color-error error-content-stacktrace\">")
                     .append("            <p>").append(logEntry.getStackTraceAsHtml()).append("</p>")
@@ -1155,16 +1151,6 @@ public class LocalHtmlInspectScheduler {
             return getStatusStackTraceLines().get(0);
         }
 
-        public String getStatusThrowableAsHtml() {
-            return getStatusStackTraceLines().stream()
-                    .map(line -> line + "<br>")
-                    .collect(Collectors.joining());
-        }
-
-        public String getStatusStackTrace() {
-            return statusStackTrace != null ? statusStackTrace : "";
-        }
-
         public LocalDateTime getRunStart() {
             return runStart;
         }
@@ -1183,18 +1169,6 @@ public class LocalHtmlInspectScheduler {
             logEntries = dtos;
         }
 
-        public boolean hasLogsThrowable() {
-            return logEntries.stream()
-                    .anyMatch(MonitorHistoricRunLogEntryDto::hasStackTrace);
-        }
-
-        public String getLastLogMessage() {
-            if (logEntries.isEmpty()) {
-                return "";
-            }
-
-            return logEntries.get(logEntries.size() - 1).getMessage();
-        }
     }
 
     public static final class MonitorHistoricRunLogEntryDto {
@@ -1217,36 +1191,18 @@ public class LocalHtmlInspectScheduler {
             return _msg;
         }
 
-        public boolean hasStackTrace() {
-            return _stackTrace != null;
+        public String getMessageAsHtml() {
+            return splitByLinebreak(getMessage()).stream()
+                    .map(line -> escapeHtml(line) + "<br>")
+                    .collect(Collectors.joining());
         }
 
         public String getStackTrace() {
-            if (_stackTrace == null) {
-                return "";
-            }
             return _stackTrace;
         }
 
-        public List<String> getStackTraceLines() {
-            if (_stackTrace == null) {
-                return new ArrayList<>();
-            }
-
-            return Arrays.asList(_stackTrace.split("\\n"));
-        }
-
-        public String getStackTraceFirstLine() {
-            List<String> lines = getStackTraceLines();
-            if (lines.isEmpty()) {
-                return "";
-            }
-
-            return getStackTraceLines().get(0);
-        }
-
         public String getStackTraceAsHtml() {
-            return getStackTraceLines().stream()
+            return splitByLinebreak(getStackTrace()).stream()
                     .map(line -> escapeHtml(line) + "<br>")
                     .collect(Collectors.joining());
         }
@@ -1254,6 +1210,15 @@ public class LocalHtmlInspectScheduler {
         public LocalDateTime getLogTime() {
             return _logTime;
         }
+
+        private List<String> splitByLinebreak(String message) {
+            if (message == null) {
+                return new ArrayList<>();
+            }
+
+            return Arrays.asList(message.split("\\n"));
+        }
+
     }
 
     /**
