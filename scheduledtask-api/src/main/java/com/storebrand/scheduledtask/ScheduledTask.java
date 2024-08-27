@@ -19,8 +19,10 @@ package com.storebrand.scheduledtask;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
@@ -97,6 +99,11 @@ public interface ScheduledTask {
      * Retrieve all schedule runs between two dates. This filters by the start time of the schedule runs.
      */
     List<ScheduleRunContext> getAllScheduleRunsBetween(LocalDateTime from, LocalDateTime to);
+
+    /**
+     * Retrieves all schedule run ids between two dates with all the logs.
+     */
+    Map<Long, List<LogEntry>> getLogEntriesByRunId(LocalDateTime from, LocalDateTime to);
 
     /**
      * Check if this current schedule is currently running. Can be used with {@link #isOverdue()} to check if this

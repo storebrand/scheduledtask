@@ -719,6 +719,90 @@ public class ScheduledTaskSqlRepositoryTest {
 
     }
 
+    @Test
+    public void getLogEntries_ByRunId_ok() {
+        // :: Setup
+        ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 1));
+
+        // first - test-schedule-1 - this should not be included by the get
+        long runId1 = schedulerRep.addScheduleRun("test-schedule-1", "instance-id-firs-run",
+                LocalDateTime.of(2021, 3, 3, 12, 1).atZone(ZoneId.systemDefault()).toInstant(),
+                "first run schedule 1");
+        schedulerRep.addLogEntry(runId1, LocalDateTime.of(2021, 3, 3, 12, 2),
+                "schedule 1: log entry 1");
+
+        // second - test-schedule-1 - is 2 minutes before the from time. not included
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 10));
+        long runId2 = schedulerRep.addScheduleRun("test-schedule-1", "instance-id-second-run",
+                LocalDateTime.of(2021, 3, 3, 12, 10).atZone(ZoneId.systemDefault()).toInstant(),
+                "second run schedule 1");
+        schedulerRep.addLogEntry(runId2, LocalDateTime.of(2021, 3, 3, 12, 12),
+                "schedule 1: log entry 2");
+
+        // third - test-schedule-1 - get from including
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 15));
+        long runId3 = schedulerRep.addScheduleRun("test-schedule-1", "instance-id-third-run",
+                LocalDateTime.of(2021, 3, 3, 12, 15).atZone(ZoneId.systemDefault()).toInstant(),
+                "third run schedule 1");
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 16));
+        schedulerRep.addLogEntry(runId3, LocalDateTime.of(2021, 3, 3, 12, 16),
+                "schedule 1: log entry 3");
+
+        // forth - test-schedule-2 - this should not be picked up due to it is another scheduleName
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 20));
+        long runId4 = schedulerRep.addScheduleRun("test-schedule-2", "instance-id-forth-run",
+                LocalDateTime.of(2021, 3, 3, 12, 20).atZone(ZoneId.systemDefault()).toInstant(),
+                "first run schedule 2");
+        schedulerRep.addLogEntry(runId4, LocalDateTime.of(2021, 3, 3, 12, 20),
+                "schedule 2: log entry 1");
+
+        // fifth - test-schedule-1 - get to including
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 25));
+        long runId5 = schedulerRep.addScheduleRun("test-schedule-1", "instance-id-fifth-run",
+                LocalDateTime.of(2021, 3, 3, 12, 25).atZone(ZoneId.systemDefault()).toInstant(),
+                "forth run schedule 1");
+        schedulerRep.addLogEntry(runId5, LocalDateTime.of(2021, 3, 3, 12, 25),
+                "schedule 1: log entry 4");
+        schedulerRep.addLogEntry(runId5, LocalDateTime.of(2021, 3, 3, 12, 25),
+                "schedule 1: log entry 5");
+
+
+        // sixth - test-schedule-1 - should not be included
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 30));
+        long runId6 = schedulerRep.addScheduleRun("test-schedule-1", "instance-id-sixth-run",
+                LocalDateTime.of(2021, 3, 3, 12, 30).atZone(ZoneId.systemDefault()).toInstant(),
+                "fifth run schedule 1");
+        schedulerRep.addLogEntry(runId6, LocalDateTime.of(2021, 3, 3, 12, 30),
+                "schedule 1: log entry 5");
+
+        // :: Act
+        Map<Long, List<LogEntry>> scheduleRunFromDb = schedulerRep.getLogEntriesByRunId(
+                "test-schedule-1",
+                LocalDateTime.of(2021, 3, 3, 12, 12),
+                LocalDateTime.of(2021, 3, 3, 12, 26));
+
+        // :: Assert
+        // We should have rundId3 and rundId5
+        assertEquals(2, scheduleRunFromDb.size());
+        List<LogEntry> run3 = scheduleRunFromDb.get(runId3);
+        assertNotNull(run3);
+        assertEquals(1, run3.size());
+        assertEquals("schedule 1: log entry 3", run3.get(0).getMessage());
+        assertFalse(run3.get(0).getStackTrace().isPresent());
+        // Get the second schedule's logEntries
+
+        List<LogEntry> run5 = scheduleRunFromDb.get(runId5);
+        assertNotNull(run5);
+        assertEquals(2, run5.size());
+        assertEquals("schedule 1: log entry 4", run5.get(0).getMessage());
+        assertEquals("schedule 1: log entry 5", run5.get(1).getMessage());
+        assertEquals(LocalDateTime.of(2021, 3, 3, 12, 25),
+                run5.get(0).getLogTime());
+        assertFalse(run5.get(0).getStackTrace().isPresent());
+
+    }
+
 
     @Test
     public void getLastScheduleRuns_ok() {

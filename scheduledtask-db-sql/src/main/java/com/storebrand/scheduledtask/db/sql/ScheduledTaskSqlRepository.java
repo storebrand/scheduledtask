@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -444,6 +445,46 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 return scheduledRuns.stream()
                         .map(ScheduledTaskSqlRepository::fromDbo)
                         .collect(toList());
+            }
+        }
+        catch (SQLException throwables) {
+            throw new RuntimeException(throwables);
+        }
+    }
+
+    @Override
+    @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
+    public Map<Long, List<LogEntry>> getLogEntriesByRunId(String scheduleName, LocalDateTime from, LocalDateTime to) {
+        String runIDsForScheduleName = "SELECT run_id FROM " + SCHEDULE_RUN_TABLE
+                + " WHERE run_start >= ? "
+                + " AND run_start <= ? "
+                + " AND schedule_name = ?";
+
+        String sql = "SELECT * FROM " + SCHEDULE_LOG_ENTRY_TABLE
+                + " WHERE run_id IN (" + runIDsForScheduleName + ")"
+                + " ORDER BY log_time DESC";
+
+        try (Connection sqlConnection = _dataSource.getConnection();
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
+            pStmt.setTimestamp(1, Timestamp.valueOf(from));
+            pStmt.setTimestamp(2, Timestamp.valueOf(to));
+            pStmt.setString(3, scheduleName);
+
+            Map<Long, List<LogEntry>> logEntriesByRunId = new HashMap<>();
+            try (ResultSet result = pStmt.executeQuery()) {
+                while (result.next()) {
+                    // -> Yes we found the first row
+                    long runId = result.getLong("run_id");
+                    LogEntryDbo logEntry = new LogEntryDbo(
+                            result.getLong("log_id"),
+                            result.getLong("run_id"),
+                            result.getString("log_msg"),
+                            result.getString("log_stacktrace"),
+                            result.getTimestamp("log_time"));
+                    logEntriesByRunId.computeIfAbsent(runId, notUsed -> new ArrayList<>()).add(logEntry);
+                }
+
+                return logEntriesByRunId;
             }
         }
         catch (SQLException throwables) {
