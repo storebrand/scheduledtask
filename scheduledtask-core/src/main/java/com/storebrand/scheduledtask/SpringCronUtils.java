@@ -63,7 +63,7 @@ import javax.annotation.meta.When;
  *
  * @author the original authors, as mentioned in each specific internal class
  */
-class SpringCronUtils {
+public class SpringCronUtils {
 
     // ==== CRON EXPRESSION RELATED CLASSES ============================================================================
 
@@ -416,9 +416,8 @@ class SpringCronUtils {
      *
      * @author Arjen Poutsma
      * @since 5.3
-     * @see CronTrigger
      */
-    static final class CronExpression {
+    public static final class CronExpression {
 
         static final int MAX_ATTEMPTS = 366;
 

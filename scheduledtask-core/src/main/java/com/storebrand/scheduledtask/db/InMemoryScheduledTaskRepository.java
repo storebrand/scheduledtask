@@ -22,6 +22,7 @@ import static java.util.stream.Collectors.toMap;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -33,9 +34,13 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
+import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
+import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
+
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Simple in-memory implementation for {@link InMemoryScheduledTaskRepository}. This is only intended for use in unit
@@ -58,35 +63,61 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
     private final Clock _clock;
     private final AtomicLong _runIdGenerator = new AtomicLong();
     private final AtomicLong _logIdGenerator = new AtomicLong();
+    private ConcurrentHashMap<String, ScheduledTaskConfig> _scheduledTaskDefinitions = new ConcurrentHashMap<>();
 
     public InMemoryScheduledTaskRepository(Clock clock) {
         _clock = clock;
     }
 
+    @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
     @Override
-    public int createSchedule(String scheduleName, String cronExpression, Instant nextRun) {
+    public int createSchedule(ScheduledTaskConfig config) {
         synchronized (_lockObject) {
-            if (_schedules.containsKey(scheduleName)) {
+            if (_schedules.containsKey(config.getName())) {
                 return 0;
             }
-            InMemorySchedule schedule = new InMemorySchedule(scheduleName, cronExpression, true, false,
-                    nextRun, _clock.instant());
-            _schedules.put(scheduleName, schedule);
+
+            CronExpression cronExpressionParsed = CronExpression.parse(config.getCronExpression());
+            LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
+            Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
+
+            _scheduledTaskDefinitions.put(config.getName(), config);
+            InMemorySchedule schedule = new InMemorySchedule(config.getName(), null, true, false,
+                    nextRunInstant, _clock.instant());
+            _schedules.put(config.getName(), schedule);
             return 1;
         }
     }
 
     @Override
-    public int updateNextRun(String scheduleName, String overrideCronExpression, Instant nextRun) {
-        if (createSchedule(scheduleName, overrideCronExpression, nextRun) == 1) {
-            return 1;
-        }
+    public int setTaskOverridenCron(String scheduleName, String overrideCronExpression) {
         synchronized (_lockObject) {
             InMemorySchedule schedule = _schedules.get(scheduleName);
             if (schedule == null) {
                 return 0;
             }
-            _schedules.put(scheduleName, schedule.update(overrideCronExpression, nextRun, _clock.instant()));
+
+            _schedules.put(scheduleName, schedule.updateCron(overrideCronExpression));
+            updateNextRun(scheduleName);
+            return 1;
+        }
+    }
+
+    @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
+    @Override
+    public int updateNextRun(String scheduleName) {
+        synchronized (_lockObject) {
+            InMemorySchedule schedule = _schedules.get(scheduleName);
+            if (schedule == null) {
+                return 0;
+            }
+            String cronExpressionToUse = schedule.getOverriddenCronExpression()
+                    .orElse(_scheduledTaskDefinitions.get(scheduleName).getCronExpression());
+            CronExpression cronExpressionParsed = CronExpression.parse(cronExpressionToUse);
+            LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
+            Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
+            _schedules.put(scheduleName, schedule.updateNextRun(nextRunInstant, _clock.instant()));
+
             return 1;
         }
     }
@@ -156,7 +187,7 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
     }
 
     @Override
-    public Optional<ScheduledRunDto> getScheduleRun(long runId) {
+    public Optional<ScheduledRunDto> getScheduledRun(long runId) {
         return Optional.ofNullable(_scheduledRuns.get(runId));
     }
 
@@ -356,8 +387,13 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
                     _lastUpdated);
         }
 
-        InMemorySchedule update(String overriddenCronExpression, Instant nextRun, Instant lastUpdated) {
-            return new InMemorySchedule(_name, overriddenCronExpression, _active, _runOnce, nextRun,
+        InMemorySchedule updateCron(String cronExpression) {
+            return new InMemorySchedule(_name, cronExpression, _active, _runOnce, _nextRun,
+                    _lastUpdated);
+        }
+
+        InMemorySchedule updateNextRun(Instant nextRun, Instant lastUpdated) {
+            return new InMemorySchedule(_name, _cronExpression, _active, _runOnce, nextRun,
                     lastUpdated);
         }
     }

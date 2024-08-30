@@ -18,6 +18,7 @@ package com.storebrand.scheduledtask;
 
 import static java.util.stream.Collectors.toMap;
 
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -264,7 +265,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                         continue SLEEP_LOOP;
                     }
 
-                    // ----- We where not able to keep the lock and not able to acquire the lock so we are not master,
+                    // ----- We were not able to keep the lock and not able to acquire the lock so we are not master,
                     // but we should regardless of this do a new sleep cycle after we mark us as not the master
                     _isMaster = false;
                     _lastUpdated = Instant.now(_clock);
@@ -383,6 +384,103 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         }
     }
 
+    /**
+     * The schedule settings retrieved from the database.
+     */
+    public static class ScheduleImpl implements Schedule {
+        private final String scheduleName;
+        private final boolean active;
+        private final boolean runOnce;
+        private final String overriddenCronExpression;
+        private final Instant nextRun;
+        private final Instant lastUpdated;
+
+        public ScheduleImpl(String scheduleName, boolean active, boolean runOnce, String cronExpression,
+                Instant nextRun, Instant lastUpdated) {
+            this.scheduleName = scheduleName;
+            this.active = active;
+            this.runOnce = runOnce;
+            this.overriddenCronExpression = cronExpression;
+            this.nextRun = nextRun;
+            this.lastUpdated = lastUpdated;
+        }
+
+        @Override
+        public String getName() {
+            return scheduleName;
+        }
+
+        @Override
+        public boolean isActive() {
+            return active;
+        }
+
+        @Override
+        public boolean isRunOnce() {
+            return runOnce;
+        }
+
+
+        @Override
+        public Optional<String> getOverriddenCronExpression() {
+            return Optional.ofNullable(overriddenCronExpression);
+        }
+
+        @Override
+        public Instant getNextRun() {
+            return nextRun;
+        }
+
+        @Override
+        public Instant getLastUpdated() {
+            return lastUpdated;
+        }
+    }
+
+    /**
+     * A log line for a given Schedule run.
+     */
+    public static class LogEntryImpl implements LogEntry {
+        private final long _logId;
+        private final long _runId;
+        private final String _message;
+        private final String _stackTrace;
+        private final LocalDateTime _logTime;
+
+        public LogEntryImpl(long logId, long runId, String message, String stackTrace, Timestamp logTime) {
+            _logId = logId;
+            _runId = runId;
+            _message = message;
+            _stackTrace = stackTrace;
+            _logTime = logTime.toLocalDateTime();
+        }
+
+        @Override
+        public long getLogId() {
+            return _logId;
+        }
+
+        @Override
+        public long getRunId() {
+            return _runId;
+        }
+
+        @Override
+        public String getMessage() {
+            return _message;
+        }
+
+        @Override
+        public Optional<String> getStackTrace() {
+            return Optional.ofNullable(_stackTrace);
+        }
+
+        @Override
+        public LocalDateTime getLogTime() {
+            return _logTime;
+        }
+    }
+
     // ===== Helper class ==========================================================================================
 
     private class ScheduledTaskRunnerBuilder implements ScheduledTaskBuilder {
@@ -480,13 +578,6 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                 + "always uses Temporal LocalDateTime and is always known.")
         public ScheduledTask start() {
             // In the first insert we can calculate the next run directly since there is no override from db yet
-            CronExpression cronExpressionParsed = CronExpression.parse(_cronExpression);
-            LocalDateTime nextRunTime = cronExpressionParsed.next(LocalDateTime.now(_clock));
-            Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
-
-            // Ensure schedule exists in database. This will only add the schedule if it does not exist.
-            _scheduledTaskRepository.createSchedule(_scheduleName, nextRunInstant);
-
             ScheduledTask scheduledTask = _schedules.compute(_scheduleName, (key, value) -> {
                 // ?: Do we already have a schedule with this name?
                 if (value != null) {
@@ -506,6 +597,8 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                 ScheduledTaskConfig config = new ScheduledTaskConfig(_scheduleName, _cronExpression,
                         _maxExpectedMinutesToRun, _criticality, _recovery, retentionPolicy);
 
+                // Ensure the schedule exists in the database. This will only add the schedule if it does not exist.
+                _scheduledTaskRepository.createSchedule(config);
                 return new ScheduledTaskRunner(config, _runnable, ScheduledTaskRegistryImpl.this,
                         _scheduledTaskRepository, _clock);
             });

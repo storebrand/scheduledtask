@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
@@ -42,42 +43,30 @@ public interface ScheduledTaskRepository {
      * If the specified schedule is missing in the database it will create it. By default, all new schedules will be set
      * to <b>active</b>
      *
-     * @param scheduleName
-     *         - Name of the schedule.
-     * @param cronExpression
-     *         - Cron expression to insert, this can be null. Only added if we want to override the default expression.
-     * @param nextRun
-     *         - When the next run should be triggered.
+     * @param ScheduledTaskConfig
+     *          - Holds the name, cronExpression and other configuration for the schedule.
      * @return int - Amount of inserted rows. 0 or 1.
      */
-    int createSchedule(String scheduleName, String cronExpression, Instant nextRun);
+    int createSchedule(ScheduledTaskConfig config);
 
     /**
-     * If the specified schedule is missing in the database it will create it. By default, all new schedules will be set
-     * to <b>active</b>
      *
      * @param scheduleName
      *         - Name of the schedule.
-     * @param nextRun
-     *         - When the next run should be triggered.
-     * @return int - Amount of inserted rows. 0 or 1.
+     * @param overrideCronExpression
+     *         - if set defines the overridden cron expression that is used to calculate the nextRun
+     * @return int - amount of updates done
      */
-    default int createSchedule(String scheduleName, Instant nextRun) {
-        return createSchedule(scheduleName, null, nextRun);
-    }
+    int setTaskOverridenCron(String scheduleName, String overrideCronExpression);
 
     /**
      * Update the next run for a given schedule.
      *
      * @param scheduleName
      *         - Name of the schedule
-     * @param overrideCronExpression
-     *         - if set defines the overridden cron expression that is used to calculate the nextRun
-     * @param nextRun
-     *         - When the schedule should run next
      * @return int - amount of updates done
      */
-    int updateNextRun(String scheduleName, String overrideCronExpression, Instant nextRun);
+    int updateNextRun(String scheduleName);
 
     /**
      * Set the active state on a given schedule. If this is set to false then the scheduler will do the "looping" bit
@@ -146,7 +135,7 @@ public interface ScheduledTaskRepository {
      *         - The runId to retrieve the scheduled run for.
      * @return
      */
-    Optional<ScheduledRunDto> getScheduleRun(long runId);
+    Optional<ScheduledRunDto> getScheduledRun(long runId);
 
     /**
      * Get the last inserted ScheduleRun for the given scheduleName.

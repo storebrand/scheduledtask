@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -38,12 +39,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import com.storebrand.scheduledtask.ScheduledTask.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
+import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
-import com.storebrand.scheduledtask.db.sql.ScheduledTaskSqlRepository.ScheduledRunDbo;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
 
 /**
@@ -117,16 +120,17 @@ public class ScheduledTaskSqlRepositoryTest {
     public void createScheduleThatDoesNotExists_ok() {
         // :: Setup
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
-        Instant nextRun = getInstant(2021, 3, 3, 12, 24);
-
+        _clock.setFixedClock(getInstant(2021, 3, 3, 12, 24));
+        ScheduledTaskConfig config = new ScheduledTaskConfig("testSchedule", "0 0 23 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
         // :: Act
-        int created = schedulerRep.createSchedule("testSchedule", "0 0 23 ? * *", nextRun);
+        int created = schedulerRep.createSchedule(config);
 
         // :: Assert
         assertEquals(1, created);
         Optional<Schedule> schedule = schedulerRep.getSchedule("testSchedule");
         assertTrue(schedule.isPresent());
-        assertEquals(nextRun, schedule.get().getNextRun());
+        assertEquals(getInstant(2021, 3, 3, 23, 0), schedule.get().getNextRun());
         assertTrue(schedule.get().isActive());
         assertFalse(schedule.get().isRunOnce());
     }
@@ -135,18 +139,20 @@ public class ScheduledTaskSqlRepositoryTest {
     public void createScheduleThatAlreadyExists_fail() {
         // :: Setup
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
-        Instant nextRun = getInstant(2021, 3, 3, 12, 24);
-        int firstInsert = schedulerRep.createSchedule("alreadyExists", null, nextRun);
+        _clock.setFixedClock(getInstant(2021, 3, 3, 12, 24));
+        ScheduledTaskConfig config = new ScheduledTaskConfig("alreadyExists", "0 0 23 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        int firstInsert = schedulerRep.createSchedule(config);
 
         // :: Act
-        int secondInsert = schedulerRep.createSchedule("alreadyExists", null, nextRun);
+        int secondInsert = schedulerRep.createSchedule(config);
 
         // :: Assert
         assertEquals(1, firstInsert);
         assertEquals(0, secondInsert);
         Optional<Schedule> schedule = schedulerRep.getSchedule("alreadyExists");
         assertTrue(schedule.isPresent());
-        assertEquals(nextRun, schedule.get().getNextRun());
+        assertEquals(getInstant(2021, 3, 3, 23, 0), schedule.get().getNextRun());
         assertFalse(schedule.get().getOverriddenCronExpression().isPresent());
     }
 
@@ -156,22 +162,87 @@ public class ScheduledTaskSqlRepositoryTest {
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
         LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(insertTime);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        int insertSchedule = schedulerRep.createSchedule("test-schedule", null, initialNextRun);
+        ScheduledTaskConfig config = new ScheduledTaskConfig("test-schedule", "0 24 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        int insertSchedule = schedulerRep.createSchedule(config);
 
         // :: Act
-        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
+        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 25);
         _clock.setFixedClock(updateTime);
-        Instant newNextRun = getInstant(2021, 3, 4, 13, 26);
-        schedulerRep.updateNextRun("test-schedule", "0 2 23 ? * *", newNextRun);
+        // Since we are triggering a new update at 12:25 this should set the next run to next day at 12:24
+        schedulerRep.updateNextRun("test-schedule");
 
         // :: Assert
         assertEquals(1, insertSchedule);
         Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
         assertTrue(schedule.isPresent());
-        assertEquals(newNextRun, schedule.get().getNextRun());
-        assertEquals("0 2 23 ? * *", schedule.get().getOverriddenCronExpression().orElse(null));
+        assertEquals(getInstant(2021, 3, 4, 12, 24), schedule.get().getNextRun());
+        assertNull(schedule.get().getOverriddenCronExpression().orElse(null));
         assertEquals(updateTime.atZone(ZoneId.systemDefault()).toInstant(), schedule.get().getLastUpdated());
+    }
+
+    @Test
+    public void setTaskOverridenCron() {
+        // :: Setup
+        ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
+        LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
+        _clock.setFixedClock(insertTime);
+        ScheduledTaskConfig config = new ScheduledTaskConfig("test-schedule", "0 24 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        int insertSchedule = schedulerRep.createSchedule(config);
+
+        // :: Act
+        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
+        _clock.setFixedClock(updateTime);
+       // Setting a new override cron, this should also update the next run based on the new cron
+        schedulerRep.setTaskOverridenCron("test-schedule", "0 2 14 ? * *");
+
+        // :: Assert
+        assertEquals(1, insertSchedule);
+        Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
+        assertTrue(schedule.isPresent());
+        assertEquals(getInstant(2021, 3, 3, 14, 2), schedule.get().getNextRun());
+        // Since we set overridden cron, this should be present
+        assertEquals("0 2 14 ? * *", schedule.get().getOverriddenCronExpression().orElse(null));
+        assertEquals(updateTime.atZone(ZoneId.systemDefault()).toInstant(), schedule.get().getLastUpdated());
+    }
+
+    @Test
+    public void setTaskOverridenCron_and_clear() {
+        // :: Setup
+        ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
+        LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
+        _clock.setFixedClock(insertTime);
+        ScheduledTaskConfig config = new ScheduledTaskConfig("test-schedule", "0 24 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        int insertSchedule = schedulerRep.createSchedule(config);
+
+        // :: Act
+        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
+        _clock.setFixedClock(updateTime);
+       // Setting a new override cron, this should also update the next run based on the new cron
+        schedulerRep.setTaskOverridenCron("test-schedule", "0 2 14 ? * *");
+        Optional<Schedule> scheduleAfterOverrideAndBeforeClear = schedulerRep.getSchedule("test-schedule");
+        // Clear the cron override
+        LocalDateTime updateTimeCleared = LocalDateTime.of(2021, 3, 3, 12, 13);
+        _clock.setFixedClock(updateTimeCleared);
+        schedulerRep.setTaskOverridenCron("test-schedule", null);
+
+        // :: Assert
+        assertEquals(1, insertSchedule);
+        Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
+        assertTrue(schedule.isPresent());
+        // Verify that the next run is updated before we clear the override
+        assertEquals(getInstant(2021, 3, 3, 14, 2), scheduleAfterOverrideAndBeforeClear.get().getNextRun());
+        // The nextRun should be updated according to the original cron expression
+        assertEquals(getInstant(2021, 3, 3, 12, 24), schedule.get().getNextRun());
+        // Since we set overridden cron, this should be present before clearing
+        assertEquals("0 2 14 ? * *", scheduleAfterOverrideAndBeforeClear.get().getOverriddenCronExpression().orElse(null));
+        // It should be cleared now
+        assertEquals(null, schedule.get().getOverriddenCronExpression().orElse(null));
+        assertEquals(updateTime.atZone(ZoneId.systemDefault()).toInstant(), scheduleAfterOverrideAndBeforeClear.get().getLastUpdated());
+        assertEquals(updateTimeCleared.atZone(ZoneId.systemDefault()).toInstant(), schedule.get().getLastUpdated());
+
     }
 
     private Instant getInstant(int year, int month, int dayOfMonth, int hour, int minute) {
@@ -185,8 +256,9 @@ public class ScheduledTaskSqlRepositoryTest {
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
         LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(insertTime);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        schedulerRep.createSchedule("test-schedule", "0 2 23 ? * *", initialNextRun);
+        ScheduledTaskConfig config = new ScheduledTaskConfig("test-schedule", "0 24 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        schedulerRep.createSchedule(config);
 
         // :: Act
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
@@ -200,10 +272,11 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(afterSetInactive.isPresent());
         assertTrue(beforeSettingInactive.get().isActive());
         assertFalse(afterSetInactive.get().isActive());
-        assertEquals("0 2 23 ? * *", beforeSettingInactive.get().getOverriddenCronExpression().orElse(null));
+        // Overridden cron expression should not be changed when setting active
+        assertNull(beforeSettingInactive.get().getOverriddenCronExpression().orElse(null));
         Instant insertTimeInstant = insertTime.atZone(ZoneId.systemDefault()).toInstant();
         assertEquals(insertTimeInstant, beforeSettingInactive.get().getLastUpdated());
-        assertEquals("0 2 23 ? * *", afterSetInactive.get().getOverriddenCronExpression().orElse(null));
+        assertNull(afterSetInactive.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetInactive.get().getLastUpdated());
     }
 
@@ -213,8 +286,9 @@ public class ScheduledTaskSqlRepositoryTest {
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
         LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(insertTime);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        schedulerRep.createSchedule("test-schedule", "0 2 23 ? * *", initialNextRun);
+        ScheduledTaskConfig config = new ScheduledTaskConfig("test-schedule", "0 24 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        schedulerRep.createSchedule(config);
 
         // :: Act
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
@@ -228,10 +302,10 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(afterSetRunOnce.isPresent());
         assertFalse(beforeSettingRunOnce.get().isRunOnce());
         assertTrue(afterSetRunOnce.get().isRunOnce());
-        assertEquals("0 2 23 ? * *", beforeSettingRunOnce.get().getOverriddenCronExpression().orElse(null));
+        assertNull(beforeSettingRunOnce.get().getOverriddenCronExpression().orElse(null));
         Instant insertTimeInstant = insertTime.atZone(ZoneId.systemDefault()).toInstant();
         assertEquals(insertTimeInstant, beforeSettingRunOnce.get().getLastUpdated());
-        assertEquals("0 2 23 ? * *", afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
+        assertNull(afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetRunOnce.get().getLastUpdated());
     }
 
@@ -241,9 +315,12 @@ public class ScheduledTaskSqlRepositoryTest {
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
         LocalDateTime now = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(now);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        schedulerRep.createSchedule("test-schedule-1", null, initialNextRun);
-        schedulerRep.createSchedule("test-schedule-2", null, initialNextRun);
+        ScheduledTaskConfig config1 = new ScheduledTaskConfig("test-schedule-1", "0 24 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        ScheduledTaskConfig config2 = new ScheduledTaskConfig("test-schedule-2", "0 48 12 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+        schedulerRep.createSchedule(config1);
+        schedulerRep.createSchedule(config2);
 
         // :: Act
         Map<String, Schedule> schedules = schedulerRep.getSchedules();
@@ -253,6 +330,20 @@ public class ScheduledTaskSqlRepositoryTest {
         Schedule schedule1 = schedules.get("test-schedule-1");
         assertNotNull(schedule1);
         assertEquals(now.atZone(ZoneId.systemDefault()).toInstant(), schedule1.getLastUpdated());
+    }
+
+    @Test
+    public void secondsOnCron_fail() {
+        // :: Setup
+        ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
+        LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
+        _clock.setFixedClock(insertTime);
+        // Any attempt to set second on cron should fail
+        ScheduledTaskConfig config = new ScheduledTaskConfig("test-schedule", "1 12 13 ? * *",
+                1, Criticality.MINOR, Recovery.SELF_HEALING);
+
+        // :: Act & Assert
+        assertThrows(IllegalArgumentException.class, () -> schedulerRep.createSchedule(config));
     }
 
     // ==== Scheduled runs tests =================================================================
@@ -271,13 +362,15 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertTrue(id > 0);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(id);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(id);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
+
         assertEquals("schedule run inserted", scheduleRun.get().getStatusMsg());
-        assertNull(scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertNull(scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
         Assertions.assertEquals(ScheduledTaskRegistry.State.STARTED, scheduleRun.get().getStatus());
     }
 
@@ -297,14 +390,15 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("Updating state to DONE", scheduleRun.get().getStatusMsg());
         assertEquals(ScheduledTaskRegistry.State.DONE, scheduleRun.get().getStatus());
-        assertNull(scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertNull(scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
     }
 
     @Test
@@ -323,14 +417,15 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("This run failed", scheduleRun.get().getStatusMsg());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
-        assertNull(scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertNull(scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
     }
 
     @Test
@@ -349,14 +444,15 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("This run failed", scheduleRun.get().getStatusMsg());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
-        assertNotNull(scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertNotNull(scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
     }
 
     @Test
@@ -380,13 +476,14 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(setFailed1);
         // Should be no limit on changing end state, IE we are allowed to set the same state multiple times.
         assertTrue(setFailed2);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("Fault added a second time", scheduleRun.get().getStatusMsg());
-        assertEquals("testing 2 exception", scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertEquals("testing 2 exception", scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
     }
 
@@ -412,13 +509,14 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(setFailed);
         // Should be no limit on changing end state
         assertTrue(setDone);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("Updated status from failed to done", scheduleRun.get().getStatusMsg());
-        assertEquals("second testing failed exception", scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertEquals("second testing failed exception", scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
         assertEquals(ScheduledTaskRegistry.State.DONE, scheduleRun.get().getStatus());
     }
 
@@ -444,13 +542,14 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(setDone);
         // Should be no limit on changing end state
         assertTrue(setFailed);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("Updated status from done to failed", scheduleRun.get().getStatusMsg());
-        assertEquals("testing failed exception", scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertEquals("testing failed exception", scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
     }
 
@@ -468,7 +567,6 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Act
         LocalDateTime failTime = LocalDateTime.of(2021, 3, 3, 12, 2);
-        Instant failInstant = failTime.atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(failTime);
         boolean setFailed = schedulerRep.setStatus(inserted, ScheduledTaskRegistry.State.FAILED,
                 "Dispatched to fail is ok", "testing failed exception", Instant.now(_clock));
@@ -478,14 +576,15 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(inserted > 0);
         assertTrue(setDispatched);
         assertTrue(setFailed);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("Dispatched to fail is ok", scheduleRun.get().getStatusMsg());
         assertEquals("testing failed exception",
-                scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(failInstant, scheduleRun.get().getStatusTime());
+                scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(failTime, scheduleRun.get().getStatusTime());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
     }
 
@@ -506,7 +605,6 @@ public class ScheduledTaskSqlRepositoryTest {
         boolean secondDispatched = schedulerRep.setStatus(inserted, ScheduledTaskRegistry.State.DISPATCHED,
                 "Second Dispatch", null, Instant.now(_clock));
         LocalDateTime doneTime = LocalDateTime.of(2021, 3, 3, 12, 2);
-        Instant doneInstant = doneTime.atZone(ZoneId.systemDefault()).toInstant();
         _clock.setFixedClock(doneTime);
         boolean setDone = schedulerRep.setStatus(inserted, ScheduledTaskRegistry.State.DONE,
                 "Dispatched to done is ok", null, Instant.now(_clock));
@@ -516,13 +614,14 @@ public class ScheduledTaskSqlRepositoryTest {
         assertTrue(firstDispatched);
         assertTrue(secondDispatched);
         assertTrue(setDone);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("Dispatched to done is ok", scheduleRun.get().getStatusMsg());
-        assertNull(scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(doneInstant, scheduleRun.get().getStatusTime());
+        assertNull(scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(doneTime, scheduleRun.get().getStatusTime());
         assertEquals(ScheduledTaskRegistry.State.DONE, scheduleRun.get().getStatus());
     }
 
@@ -542,14 +641,15 @@ public class ScheduledTaskSqlRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDbo> scheduleRun = schedulerRep.getScheduleRunWithLogs(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
+        List<LogEntry> logEntries = schedulerRep.getLogEntries(scheduleRun.get().getRunId());
         assertEquals("This run did nothing", scheduleRun.get().getStatusMsg());
         assertEquals(State.NOOP, scheduleRun.get().getStatus());
-        assertNull(scheduleRun.get().getStatusThrowable());
-        assertEquals(nowInstant, scheduleRun.get().getRunStart());
-        assertEquals(0, scheduleRun.get().getLogEntries().size());
-        assertEquals(nowInstant, scheduleRun.get().getStatusTime());
+        assertNull(scheduleRun.get().getStatusStackTrace());
+        assertEquals(now, scheduleRun.get().getRunStart());
+        assertEquals(0, logEntries.size());
+        assertEquals(now, scheduleRun.get().getStatusTime());
     }
 
     @Test
@@ -643,7 +743,7 @@ public class ScheduledTaskSqlRepositoryTest {
     }
 
     @Test
-    public void getScheduleRunWithLogssBetween_ok() {
+    public void getScheduledRunWithLogsBetween_ok() {
         // :: Setup
         ScheduledTaskSqlRepository schedulerRep = new ScheduledTaskSqlRepository(_dataSource, _clock);
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 1));
@@ -871,6 +971,5 @@ public class ScheduledTaskSqlRepositoryTest {
         // Show that the runTime can differ from the logTime
         assertEquals(lastRunTimeSchedule2, scheduleRunFromDb.get(0).getRunStart());
     }
-
 
 }
