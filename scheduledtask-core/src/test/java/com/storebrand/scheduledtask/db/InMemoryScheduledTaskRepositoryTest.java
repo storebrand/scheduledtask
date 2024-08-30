@@ -32,6 +32,9 @@ import java.util.Optional;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import com.storebrand.scheduledtask.ScheduledTask.Criticality;
+import com.storebrand.scheduledtask.ScheduledTask.Recovery;
+import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
@@ -50,16 +53,22 @@ public class InMemoryScheduledTaskRepositoryTest {
     public void createScheduleThatDoesNotExists_ok() {
         // :: Setup
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
-        Instant nextRun = getInstant(2021, 3, 3, 12, 24);
-
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 1));
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "testSchedule",
+                "0 0 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
         // :: Act
-        int created = schedulerRep.createSchedule("testSchedule", "0 0 23 ? * *", nextRun);
+        int created = schedulerRep.createSchedule(config);
 
         // :: Assert
         assertEquals(1, created);
         Optional<Schedule> schedule = schedulerRep.getSchedule("testSchedule");
         assertTrue(schedule.isPresent());
-        assertEquals(nextRun, schedule.get().getNextRun());
+        assertEquals(getInstant(2021, 3, 3, 23, 0), schedule.get().getNextRun());
         assertTrue(schedule.get().isActive());
         assertFalse(schedule.get().isRunOnce());
     }
@@ -68,18 +77,26 @@ public class InMemoryScheduledTaskRepositoryTest {
     public void createScheduleThatAlreadyExists_fail() {
         // :: Setup
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
-        Instant nextRun = getInstant(2021, 3, 3, 12, 24);
-        int firstInsert = schedulerRep.createSchedule("alreadyExists", null, nextRun);
+        _clock.setFixedClock(getInstant(2021, 3, 3, 12, 24));
+
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "alreadyExists",
+                "0 0 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        int firstInsert = schedulerRep.createSchedule(config);
 
         // :: Act
-        int secondInsert = schedulerRep.createSchedule("alreadyExists", null, nextRun);
+        int secondInsert = schedulerRep.createSchedule(config);
 
         // :: Assert
         assertEquals(1, firstInsert);
         assertEquals(0, secondInsert);
         Optional<Schedule> schedule = schedulerRep.getSchedule("alreadyExists");
         assertTrue(schedule.isPresent());
-        assertEquals(nextRun, schedule.get().getNextRun());
+        assertEquals(getInstant(2021, 3, 3, 23, 0), schedule.get().getNextRun());
         assertFalse(schedule.get().getOverriddenCronExpression().isPresent());
     }
 
@@ -89,22 +106,117 @@ public class InMemoryScheduledTaskRepositoryTest {
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
         LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(insertTime);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        int insertSchedule = schedulerRep.createSchedule("test-schedule", null, initialNextRun);
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "test-schedule",
+                "0 2 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        int insertSchedule = schedulerRep.createSchedule(config);
+        Instant initialNextRun = schedulerRep.getSchedule("test-schedule").orElseThrow().getNextRun();
 
         // :: Act
-        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
+        // Move clock forward to simulate the update
+        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 4, 12, 12);
         _clock.setFixedClock(updateTime);
-        Instant newNextRun = getInstant(2021, 3, 4, 13, 26);
-        schedulerRep.updateNextRun("test-schedule", "0 2 23 ? * *", newNextRun);
+        schedulerRep.updateNextRun("test-schedule");
+
 
         // :: Assert
         assertEquals(1, insertSchedule);
         Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
         assertTrue(schedule.isPresent());
-        assertEquals(newNextRun, schedule.get().getNextRun());
-        assertEquals("0 2 23 ? * *", schedule.get().getOverriddenCronExpression().orElse(null));
+        assertEquals(getInstant(2021, 03, 03, 23,2), initialNextRun);
+        assertEquals(getInstant(2021, 03, 04, 23,2), schedule.get().getNextRun());
+        // No cron expression should be set since we are not overriding the cron expression
+        assertNull(schedule.get().getOverriddenCronExpression().orElse(null));
         assertEquals(updateTime.atZone(ZoneId.systemDefault()).toInstant(), schedule.get().getLastUpdated());
+    }
+
+    @Test
+    public void setTaskOverridenCron() {
+        // :: Setup
+        InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
+        LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
+        _clock.setFixedClock(insertTime);
+        // Create the initial schedule with a cron expression
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "test-schedule",
+                "0 2 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        int insertSchedule = schedulerRep.createSchedule(config);
+        Instant initialNextRun = schedulerRep.getSchedule("test-schedule").orElseThrow().getNextRun();
+
+        // :: Act
+        // Move the clock forward 1 day to simulate the update
+        LocalDateTime updateTime = LocalDateTime.of(2021, 3, 4, 12, 12);
+        _clock.setFixedClock(updateTime);
+        // Set a overridden cron expression
+        schedulerRep.setTaskOverridenCron("test-schedule", "0 0 11 ? * *");
+
+
+        // :: Assert
+        assertEquals(1, insertSchedule);
+        Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
+        assertTrue(schedule.isPresent());
+        assertEquals(getInstant(2021, 03, 03, 23,2), initialNextRun);
+        // The next run should be the next day at 11:00 (next day after 2021-03-04)
+        assertEquals(getInstant(2021, 03, 05, 11,0), schedule.get().getNextRun());
+        // No cron expression should be set since we are not overriding the cron expression
+        assertEquals("0 0 11 ? * *", schedule.get().getOverriddenCronExpression().orElse(null));
+        assertEquals(updateTime.atZone(ZoneId.systemDefault()).toInstant(), schedule.get().getLastUpdated());
+    }
+
+    @Test
+    public void setTaskOverridenCronAndClear() {
+        // :: Setup
+        InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
+        LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
+        _clock.setFixedClock(insertTime);
+        // Create the initial schedule with a cron expression
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "test-schedule",
+                "0 2 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        int insertSchedule = schedulerRep.createSchedule(config);
+        Instant initialNextRun = schedulerRep.getSchedule("test-schedule").orElseThrow().getNextRun();
+        // Move the clock forward 1 day to simulate the update
+        _clock.setFixedClock(LocalDateTime.of(2021, 3, 4, 12, 12));
+        schedulerRep.setTaskOverridenCron("test-schedule", "0 0 11 ? * *");
+        Schedule scheduleAfterOverride = schedulerRep.getSchedule("test-schedule").orElseThrow();
+        Instant initialNextRunAfterOverride = scheduleAfterOverride.getNextRun();
+
+        // :: Act
+        // Move the clock forward 1 day to simulate the update and clear the overridden cron expression
+        LocalDateTime updateTimeAfterClear = LocalDateTime.of(2021, 3, 5, 12, 12);
+        _clock.setFixedClock(updateTimeAfterClear);
+
+        // Set a overridden cron expression
+        schedulerRep.setTaskOverridenCron("test-schedule", null);
+        Instant initialNextRunAfterClear = schedulerRep.getSchedule("test-schedule").orElseThrow().getNextRun();
+
+
+        // :: Assert
+        assertEquals(1, insertSchedule);
+        Optional<Schedule> schedule = schedulerRep.getSchedule("test-schedule");
+        assertTrue(schedule.isPresent());
+        assertEquals(getInstant(2021, 03, 03, 23,2), initialNextRun);
+        // The next run after the override should be the next day at 11:00 (next day after 2021-03-04)
+        assertEquals(getInstant(2021, 03, 05, 11,0), initialNextRunAfterOverride);
+        // The next run after we clear the override should be later at 23:02 (2021-03-05)
+        assertEquals(getInstant(2021, 03, 05, 23,2), initialNextRunAfterClear);
+        // A overrideExpression should be set before we clear it.
+        assertEquals("0 0 11 ? * *", scheduleAfterOverride.getOverriddenCronExpression().orElse(null));
+        // No cron expression should be set since we have cleared the overridden cron expression
+        assertNull(schedule.get().getOverriddenCronExpression().orElse(null));
+        assertEquals(updateTimeAfterClear.atZone(ZoneId.systemDefault()).toInstant(), schedule.get().getLastUpdated());
     }
 
     private Instant getInstant(int year, int month, int dayOfMonth, int hour, int minute) {
@@ -118,8 +230,14 @@ public class InMemoryScheduledTaskRepositoryTest {
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
         LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(insertTime);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        schedulerRep.createSchedule("test-schedule", "0 2 23 ? * *", initialNextRun);
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "test-schedule",
+                "0 2 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        schedulerRep.createSchedule(config);
 
         // :: Act
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
@@ -133,10 +251,12 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(afterSetInactive.isPresent());
         assertTrue(beforeSettingInactive.get().isActive());
         assertFalse(afterSetInactive.get().isActive());
-        assertEquals("0 2 23 ? * *", beforeSettingInactive.get().getOverriddenCronExpression().orElse(null));
+        // Since no overriden cron is set we should not have set any new cron expression
+        assertNull(beforeSettingInactive.get().getOverriddenCronExpression().orElse(null));
         Instant insertTimeInstant = insertTime.atZone(ZoneId.systemDefault()).toInstant();
         assertEquals(insertTimeInstant, beforeSettingInactive.get().getLastUpdated());
-        assertEquals("0 2 23 ? * *", afterSetInactive.get().getOverriddenCronExpression().orElse(null));
+        // Since no overriden cron is set we should not have set any new cron expression
+        assertNull(afterSetInactive.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetInactive.get().getLastUpdated());
     }
 
@@ -146,8 +266,14 @@ public class InMemoryScheduledTaskRepositoryTest {
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
         LocalDateTime insertTime = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(insertTime);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        schedulerRep.createSchedule("test-schedule", "0 2 23 ? * *", initialNextRun);
+        ScheduledTaskConfig config = new ScheduledTaskConfig(
+                "test-schedule",
+                "0 2 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        schedulerRep.createSchedule(config);
 
         // :: Act
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
@@ -161,10 +287,12 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(afterSetRunOnce.isPresent());
         assertFalse(beforeSettingRunOnce.get().isRunOnce());
         assertTrue(afterSetRunOnce.get().isRunOnce());
-        assertEquals("0 2 23 ? * *", beforeSettingRunOnce.get().getOverriddenCronExpression().orElse(null));
+        // No cron expression should be set since we are not overriding the cron expression
+        assertNull(beforeSettingRunOnce.get().getOverriddenCronExpression().orElse(null));
         Instant insertTimeInstant = insertTime.atZone(ZoneId.systemDefault()).toInstant();
         assertEquals(insertTimeInstant, beforeSettingRunOnce.get().getLastUpdated());
-        assertEquals("0 2 23 ? * *", afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
+        // No cron expression should be set since we are not overriding the cron expression
+        assertNull(afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetRunOnce.get().getLastUpdated());
     }
 
@@ -174,9 +302,22 @@ public class InMemoryScheduledTaskRepositoryTest {
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
         LocalDateTime now = LocalDateTime.of(2021, 3, 3, 12, 1);
         _clock.setFixedClock(now);
-        Instant initialNextRun = getInstant(2021, 3, 3, 12, 24);
-        schedulerRep.createSchedule("test-schedule-1", null, initialNextRun);
-        schedulerRep.createSchedule("test-schedule-2", null, initialNextRun);
+        ScheduledTaskConfig configSchedule1 = new ScheduledTaskConfig(
+                "test-schedule-1",
+                "0 0 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        ScheduledTaskConfig configSchedule2 = new ScheduledTaskConfig(
+                "test-schedule-2",
+                "0 0 23 ? * *",
+                1,
+                Criticality.MINOR,
+                Recovery.SELF_HEALING
+        );
+        schedulerRep.createSchedule(configSchedule1);
+        schedulerRep.createSchedule(configSchedule2);
 
         // :: Act
         Map<String, Schedule> schedules = schedulerRep.getSchedules();
@@ -204,7 +345,7 @@ public class InMemoryScheduledTaskRepositoryTest {
 
         // :: Assert
         assertTrue(id > 0);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(id);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(id);
         assertTrue(scheduleRun.isPresent());
         assertEquals("schedule run inserted", scheduleRun.get().getStatusMsg());
         assertNull(scheduleRun.get().getStatusStackTrace());
@@ -230,7 +371,7 @@ public class InMemoryScheduledTaskRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("Updating state to DONE", scheduleRun.get().getStatusMsg());
         assertEquals(ScheduledTaskRegistry.State.DONE, scheduleRun.get().getStatus());
@@ -256,7 +397,7 @@ public class InMemoryScheduledTaskRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("This run failed", scheduleRun.get().getStatusMsg());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
@@ -282,7 +423,7 @@ public class InMemoryScheduledTaskRepositoryTest {
 
         // :: Assert
         assertTrue(inserted > 0);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("This run failed", scheduleRun.get().getStatusMsg());
         assertEquals(ScheduledTaskRegistry.State.FAILED, scheduleRun.get().getStatus());
@@ -313,7 +454,7 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(setFailed1);
         // Should be no limit on changing end state, IE we are allowed to set the same state multiple times.
         assertTrue(setFailed2);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("Fault added a second time", scheduleRun.get().getStatusMsg());
         assertEquals("testing 2 exception", scheduleRun.get().getStatusStackTrace());
@@ -345,7 +486,7 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(setFailed);
         // Should be no limit on changing end state
         assertTrue(setDone);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("Updated status from failed to done", scheduleRun.get().getStatusMsg());
         assertEquals("second testing failed exception", scheduleRun.get().getStatusStackTrace());
@@ -377,7 +518,7 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(setDone);
         // Should be no limit on changing end state
         assertTrue(setFailed);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("Updated status from done to failed", scheduleRun.get().getStatusMsg());
         assertEquals("testing failed exception", scheduleRun.get().getStatusStackTrace());
@@ -410,7 +551,7 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(inserted > 0);
         assertTrue(setDispatched);
         assertTrue(setFailed);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("Dispatched to fail is ok", scheduleRun.get().getStatusMsg());
         assertEquals("testing failed exception",
@@ -447,7 +588,7 @@ public class InMemoryScheduledTaskRepositoryTest {
         assertTrue(firstDispatched);
         assertTrue(secondDispatched);
         assertTrue(setDone);
-        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduleRun(inserted);
+        Optional<ScheduledRunDto> scheduleRun = schedulerRep.getScheduledRun(inserted);
         assertTrue(scheduleRun.isPresent());
         assertEquals("Dispatched to done is ok", scheduleRun.get().getStatusMsg());
         assertNull(scheduleRun.get().getStatusStackTrace());
@@ -548,7 +689,7 @@ public class InMemoryScheduledTaskRepositoryTest {
     }
 
     @Test
-    public void getScheduleRunWithLogssBetween_ok() {
+    public void getScheduledRunWithLogsBetween_ok() {
         // :: Setup
         InMemoryScheduledTaskRepository schedulerRep = new InMemoryScheduledTaskRepository(_clock);
         _clock.setFixedClock(LocalDateTime.of(2021, 3, 3, 12, 1));

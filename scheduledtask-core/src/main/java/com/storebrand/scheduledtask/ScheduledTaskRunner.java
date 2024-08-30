@@ -75,6 +75,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     private volatile boolean _runFlag = true;
     private volatile boolean _isRunning = false;
     private volatile boolean _runOnce = false;
+    private volatile boolean _justStarted = true;
 
     ScheduledTaskRunner(ScheduledTaskConfig config, ScheduleRunnable runnable,
             ScheduledTaskRegistry scheduledTaskRegistry, ScheduledTaskRepository scheduledTaskRepository, Clock clock) {
@@ -112,24 +113,21 @@ class ScheduledTaskRunner implements ScheduledTask {
             try {
                 SLEEP_LOOP:
                 while (_runFlag) {
-                    // get the next run from the db:
-                    Optional<Schedule> scheduleFromDb = _scheduledTaskRepository.getSchedule(getName());
-                    if (scheduleFromDb.isEmpty()) {
-                        throw new RuntimeException("Schedule with name '" + getName() + " was not found'");
-                    }
-
-                    _nextRun = scheduleFromDb.get().getNextRun();
-                    _runOnce = scheduleFromDb.get().isRunOnce();
-                    // We may have set an override expression, so retrieve this and store it for use when we
-                    // should update the nextRun
-                    _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression()
-                            .map(CronExpression::parse)
-                            .orElse(null);
-
+                    updateStateFromSchedule();
                     // ?: Are we the master node?
                     if (_scheduledTaskRegistry.hasMasterLock()) {
                         // -> Yes, we are master and should only sleep if we are still waiting for the nextRun and if we
                         // are not set to run once.
+
+                        if (_justStarted) {
+                            // do active node housekeeping
+                            log.info("Thread for Task '" + getName()
+                                    + "' with nodeName '" + Host.getLocalHostName() + "' "
+                                    + " is master and just started, updating next run.");
+                            _scheduledTaskRepository.updateNextRun(getName());
+                            updateStateFromSchedule();
+                            _justStarted = false;
+                        }
                         if (_runOnce) {
                             // We should run once, so we should not sleep but instead run the schedule now.
                             log.info("Thread for Task '" + getName()
@@ -172,6 +170,12 @@ class ScheduledTaskRunner implements ScheduledTask {
                     else {
                         // -> No, we are not master, so we should sleep for 15min or until we are master and
                         // are awoken again
+
+                        // ?: Is the justStarted flag set?
+                        if (_justStarted) {
+                            // -> Yes, we have just started, and we are not master so update the justStarted flag.
+                            _justStarted = false;
+                        }
                         synchronized (_syncObject) {
                             log.info("Thread for Task '" + getName() + "', "
                                     + " slave node '" + Host.getLocalHostName() + "' "
@@ -209,18 +213,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     }
 
                     // Re-retrieve the schedule from the db. It may have changed during the sleep:
-                    scheduleFromDb = _scheduledTaskRepository.getSchedule(getName());
-                    if (!scheduleFromDb.isPresent()) {
-                        throw new RuntimeException("Schedule with name '" + getName() + " was not found'");
-                    }
-                    // We may have set an override expression, so retrieve this and store it for use when we
-                    // should update the nextRun
-                    _overrideExpression = scheduleFromDb.get().getOverriddenCronExpression()
-                            .map(CronExpression::parse)
-                            .orElse(null);
-                    _nextRun = scheduleFromDb.get().getNextRun();
-                    _active = scheduleFromDb.get().isActive();
-                    _runOnce = scheduleFromDb.get().isRunOnce();
+                    updateStateFromSchedule();
 
                     // ?: Check if we should run now once regardless of when the schedule should actually run
                     if (_runOnce) {
@@ -261,7 +254,7 @@ class ScheduledTaskRunner implements ScheduledTask {
                     log.info("Thread for Task '" + getName()
                             + "' is currently deactivated so "
                             + "we are skipping this run and setting next run to '" + nextRun + "'");
-                    _scheduledTaskRepository.updateNextRun(getName(), getOverrideExpressionAsString(), nextRun);
+                    _scheduledTaskRepository.updateNextRun(getName());
                     _isRunning = false;
                     _lastRunCompleted = Instant.now(_clock);
                     continue NEXTRUN;
@@ -310,13 +303,35 @@ class ScheduledTaskRunner implements ScheduledTask {
         log.info("Thread for Task '" + getName() + "' asked to exit, shutting down!");
     }
 
+    private Optional<Schedule> updateStateFromSchedule() {
+        Optional<Schedule> scheduleFromDb = _scheduledTaskRepository.getSchedule(getName());
+        if (scheduleFromDb.isEmpty()) {
+            throw new RuntimeException("Schedule with name '" + getName() + " was not found'");
+        }
+
+        // We may have set an override expression, so retrieve this and store it for use when we
+        // should update the nextRun
+        _overrideExpression = scheduleFromDb.flatMap(Schedule::getOverriddenCronExpression)
+                .map(CronExpression::parse)
+                .orElse(null);
+
+        _active = scheduleFromDb.get().isActive();
+        _nextRun = scheduleFromDb.get().getNextRun();
+        _runOnce = scheduleFromDb.get().isRunOnce();
+        return scheduleFromDb;
+    }
+
     /**
      * Actually runs the task, and logs if it fails.
      */
     private void runTask() {
+        // Update the next run time in the database
+        _scheduledTaskRepository.updateNextRun(getName());
+        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
         log.info("Thread for Task '" + getName()
                 + "' is beginning to do the run according "
-                + "to the set schedule '" + getActiveCronExpressionInternal().toString() + "'.");
+                + "to the set schedule '" + getActiveCronExpressionInternal().toString()
+                + "'. Setting next run to '" + nextRun + "'.");
         _currentRunStarted = Instant.now(_clock);
         long id = _scheduledTaskRepository.addScheduleRun(getName(), Host.getLocalHostName(),
                 _currentRunStarted, "Schedule run starting.");
@@ -350,14 +365,10 @@ class ScheduledTaskRunner implements ScheduledTask {
         _lastRunCompleted = Instant.now(_clock);
 
         _isRunning = false;
-        Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
         log.info("Thread for Task '" + getName() + "' "
                 + " runId '" + ctx.getRunId() + "' "
                 + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
-                + "ms to run. Setting next run to '" + nextRun + "', "
-                + "using CronExpression '" + getActiveCronExpressionInternal() + "'");
-
-        _scheduledTaskRepository.updateNextRun(getName(), getOverrideExpressionAsString(), nextRun);
+                + "ms to run.");
     }
 
     /**
@@ -410,8 +421,7 @@ class ScheduledTaskRunner implements ScheduledTask {
         CronExpression parsedNewCronExpression = newCronExpression != null
                 ? CronExpression.parse(newCronExpression) : null;
         _overrideExpression = parsedNewCronExpression;
-        _scheduledTaskRepository.updateNextRun(getName(), newCronExpression,
-                nextScheduledRun(parsedNewCronExpression, Instant.now(_clock)));
+        _scheduledTaskRepository.setTaskOverridenCron(getName(), newCronExpression);
         // Updated cron, wake thread. The next run may be earlier than the previous set sleep cycle.
         notifyThread();
     }
@@ -567,10 +577,10 @@ class ScheduledTaskRunner implements ScheduledTask {
 
     @Override
     public ScheduleRunContext getInstance(long runId) {
-        Optional<ScheduledRunDto> scheduleRun = _scheduledTaskRepository.getScheduleRun(runId);
+        Optional<ScheduledRunDto> scheduledRun = _scheduledTaskRepository.getScheduledRun(runId);
 
         // ?: Did we find the instance?
-        return scheduleRun
+        return scheduledRun
                 // -> yes we found the schedule run
                 .map(scheduledRunDto ->
                         new ScheduledTaskRunnerContext(scheduledRunDto, this, _scheduledTaskRepository, _clock))
@@ -616,8 +626,14 @@ class ScheduledTaskRunner implements ScheduledTask {
      * Make this tread completely stop
      */
     void killSchedule() {
+        // :? Are we currently running and do we have the masterLock?
+        if (_isRunning && _scheduledTaskRegistry.hasMasterLock()) {
+            // -> Yes, we are currently running and we have the masterLock, try to log that we are stopping
+            getLastScheduleRun().ifPresent(ctx -> ctx.failed("Aborted due to shutdown!"));
+        }
         _runFlag = false;
-        // Then wake the tread so it is aware that we have updated the runFlag:
+
+        // Then wake the tread, so it is aware that we have updated the runFlag:
         notifyThread();
     }
 
