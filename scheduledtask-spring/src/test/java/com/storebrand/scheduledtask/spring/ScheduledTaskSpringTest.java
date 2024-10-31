@@ -49,7 +49,7 @@ public class ScheduledTaskSpringTest {
         _jdbcTemplate.execute(MASTER_TABLE_CREATE_SQL);
         _jdbcTemplate.execute(SCHEDULE_TABLE_VERSION_CREATE_SQL);
         _jdbcTemplate.execute("INSERT INTO stb_schedule_table_version (version) "
-                + " VALUES (1)");
+                + " VALUES (2)");
         _jdbcTemplate.execute(STOREBRAND_SCHEDULE_CREATE_SQL);
         _jdbcTemplate.execute(SCHEDULE_RUN_CREATE_SQL);
         _jdbcTemplate.execute(SCHEDULE_RUN_INDEX_CREATE_SQL);
@@ -110,8 +110,8 @@ public class ScheduledTaskSpringTest {
     static final String MASTER_TABLE_CREATE_SQL = "CREATE TABLE " + MasterLockSqlRepository.MASTER_LOCK_TABLE + " ( "
             + " lock_name VARCHAR(255) NOT NULL, "
             + " node_name VARCHAR(255) NOT NULL, "
-            + " lock_taken_time datetime2 NOT NULL, "
-            + " lock_last_updated_time datetime2 NOT NULL, "
+            + " lock_taken_time_utc datetime2 NOT NULL, "
+            + " lock_last_updated_time_utc datetime2 NOT NULL, "
             + " CONSTRAINT PK_lock_name PRIMARY KEY (lock_name) "
             + " );";
 
@@ -125,8 +125,8 @@ public class ScheduledTaskSpringTest {
                     + " is_active BIT NOT NULL, "
                     + " run_once BIT NOT NULL, "
                     + " cron_expression VARCHAR(255) NULL, "
-                    + " next_run DATETIME2 NOT NULL, "
-                    + " last_updated DATETIME2 NOT NULL, "
+                    + " next_run_utc DATETIME2 NOT NULL, "
+                    + " last_updated_utc DATETIME2 NOT NULL, "
                     + " CONSTRAINT PK_schedule_name PRIMARY KEY (schedule_name) "
                     + " );";
 
@@ -135,16 +135,16 @@ public class ScheduledTaskSpringTest {
                     + " run_id BIGINT NOT NULL IDENTITY(1, 1), "
                     + " schedule_name VARCHAR(255) NOT NULL, "
                     + " hostname VARCHAR(255) NOT NULL, "
-                    + " run_start DATETIME2 NOT NULL, "
+                    + " run_start_utc DATETIME2 NOT NULL, "
                     + " status VARCHAR(250) NULL, "
                     + " status_msg VARCHAR(MAX) NULL, "
                     + " status_stacktrace VARCHAR(MAX) NULL, "
-                    + " status_time DATETIME2 NOT NULL, "
+                    + " status_time_utc DATETIME2 NOT NULL, "
                     + " CONSTRAINT PK_run_id PRIMARY KEY (run_id) "
                     + " );";
 
     static final String SCHEDULE_RUN_INDEX_CREATE_SQL = "CREATE INDEX IX_stb_schedule_run_name_start_status"
-            + " ON stb_schedule_run (schedule_name, run_start DESC, status);";
+            + " ON stb_schedule_run (schedule_name, run_start_utc DESC, status);";
 
     static final String SCHEDULE_LOG_ENTRY_CREATE_SQL =
             "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_LOG_ENTRY_TABLE + " ( "
@@ -152,7 +152,7 @@ public class ScheduledTaskSpringTest {
                     + " run_id BIGINT NOT NULL, "
                     + " log_msg VARCHAR(MAX) NOT NULL, "
                     + " log_stacktrace VARCHAR(MAX) NULL, "
-                    + " log_time DATETIME2 NOT NULL, "
+                    + " log_time_utc DATETIME2 NOT NULL, "
                     + " CONSTRAINT PK_log_id PRIMARY KEY (log_id), "
                     + " CONSTRAINT FK_run_id FOREIGN KEY (run_id) REFERENCES stb_schedule_run (run_id) "
                     + " );";

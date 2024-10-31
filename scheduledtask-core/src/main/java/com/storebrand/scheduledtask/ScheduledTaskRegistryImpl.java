@@ -18,7 +18,6 @@ package com.storebrand.scheduledtask;
 
 import static java.util.stream.Collectors.toMap;
 
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -41,7 +40,6 @@ import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig.StaticRetentionPolicy;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
-import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -447,12 +445,12 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         private final String _stackTrace;
         private final LocalDateTime _logTime;
 
-        public LogEntryImpl(long logId, long runId, String message, String stackTrace, Timestamp logTime) {
+        public LogEntryImpl(long logId, long runId, String message, String stackTrace, Instant logTime) {
             _logId = logId;
             _runId = runId;
             _message = message;
             _stackTrace = stackTrace;
-            _logTime = logTime.toLocalDateTime();
+            _logTime = logTime.atZone(ZoneId.systemDefault()).toLocalDateTime();
         }
 
         @Override
