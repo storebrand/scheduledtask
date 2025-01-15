@@ -79,7 +79,7 @@ public class InMemoryMasterLockRepository implements MasterLockRepository {
                 return false;
             }
             Instant now = _clock.instant();
-            // We should only allow to acquire the lock if the last_updated_time is older than 10 minutes.
+            // We should only allow acquiring the lock if the last_updated_time_utc is older than 10 minutes.
             // Then it means it is up for grabs.
             Instant lockShouldBeOlderThan = now.minus(10, ChronoUnit.MINUTES);
 

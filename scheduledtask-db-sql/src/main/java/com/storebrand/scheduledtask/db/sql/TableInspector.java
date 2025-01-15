@@ -48,12 +48,12 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 class TableInspector {
     private static final Logger log = LoggerFactory.getLogger(TableInspector.class);
     public static final String TABLE_VERSION = "stb_schedule_table_version";
-    public static final int VALID_VERSION = 1;
+    public static final int VALID_VERSION = 2;
     private final Map<String, TableColumn> _tableColumns;
     private final Map<String, String> _primaryKeys;
     private final Map<String, ForeignKey> _foreignKeys;
     private final String _tableName;
-    private static final String MIGRATION_FILE_NAME = "V_1__Create_initial_tables.sql";
+    private static final String MIGRATION_FILE_NAME = "V_2__Create_initial_tables.sql";
     private final DataSource _dataSource;
 
     @SuppressFBWarnings(value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",

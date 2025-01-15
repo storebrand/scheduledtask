@@ -95,7 +95,7 @@ public interface MasterLockRepository {
     boolean releaseLock(String lockName, String nodeName);
 
     /**
-     * Used for the running host to keep the lock for 5 more minutes. If the <b>lock_last_updated_time</b> is updated
+     * Used for the running host to keep the lock for 5 more minutes. If the <b>lock_last_updated_time_utc</b> is updated
      * that means this host still has this master lock for another 5 minutes. After 5 minutes it means no-one has it
      * until 10 minutes has passed. At that time it is up for grabs again.
      *
