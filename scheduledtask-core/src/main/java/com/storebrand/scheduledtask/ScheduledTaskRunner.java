@@ -340,14 +340,15 @@ class ScheduledTaskRunner implements ScheduledTask {
         ScheduleRunContext ctx = new ScheduledTaskRunnerContext(id, ScheduledTaskRunner.this,
                 Host.getLocalHostName(), _scheduledTaskRepository, _clock, _currentRunStarted);
 
-        // :: Set MDC values for log lines.
-        MDC.put(MDC_TRACE_ID_KEY, "ScheduledTask[" + getNameCleanedAndStripped() + "]rid[" + id + "]"
-                           + generateRandomString());
-        MDC.put(MDC_TASK_RUN_ID_KEY, String.valueOf(id));
-        MDC.put(MDC_TASK_NAME_KEY, getName());
-        MDC.put(MDC_TASK_NAME_CLEAN_KEY, getNameCleanedAndStripped());
-
         try {
+            // :: Set MDC values for log lines.
+            MDC.put(MDC_TRACE_ID_KEY, "ScheduledTask[" + getNameCleanedAndStripped() + "]rid[" + id + "]"
+                                      + generateRandomString());
+            MDC.put(MDC_TASK_RUN_ID_KEY, String.valueOf(id));
+            MDC.put(MDC_TASK_NAME_KEY, getName());
+            MDC.put(MDC_TASK_NAME_CLEAN_KEY, getNameCleanedAndStripped());
+
+            // Proceed with the run
             log.info("Thread for Task '" + getName()
                      + "' is beginning to do the run according "
                      + "to the set schedule '" + getActiveCronExpressionInternal().toString()
