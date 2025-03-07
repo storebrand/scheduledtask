@@ -94,7 +94,7 @@ class ScheduledTaskRunner implements ScheduledTask {
         // If the scheduled task registry is in a special test mode then we don't start the thread runner, but instead
         // enable a special mode where we only run tasks by calling runNow().
         _testMode = (_scheduledTaskRegistry instanceof ScheduledTaskRegistryImpl) &&
-                ((ScheduledTaskRegistryImpl)_scheduledTaskRegistry).isTestMode();
+                ((ScheduledTaskRegistryImpl) _scheduledTaskRegistry).isTestMode();
 
         // ?: Are we in test mode?
         if (!_testMode) {
@@ -150,7 +150,8 @@ class ScheduledTaskRunner implements ScheduledTask {
                                         + "' ms and wait for the next schedule run '" + _nextRun + "'.";
                                 // To avoid spamming the log too hard we only log to info every x sleep cycles.
                                 if (elidedSleepLogLines++ >= ELIDED_LOG_LINES_ON_MASTER_SLEEP) {
-                                    log.info(message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
+                                    log.info(
+                                            message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
                                     elidedSleepLogLines = 0;
                                 }
                                 else {
@@ -413,8 +414,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * Set a new cronExpression to be used by the schedule. If this is set to null it will fall back to use the {@link
-     * #_defaultCronExpression} again.
+     * Set a new cronExpression to be used by the schedule. If this is set to null it will fall back to use the
+     * {@link #_defaultCronExpression} again.
      */
     @Override
     public void setOverrideExpression(String newCronExpression) {
@@ -525,8 +526,8 @@ class ScheduledTaskRunner implements ScheduledTask {
         // E-> We have started, so we should check if we have passed expected run time
         return Instant.now(_clock).isAfter(
                 nextScheduledRun(getActiveCronExpressionInternal(), lastRunStarted)
-                // Two minute grace time
-                .plus(2, ChronoUnit.MINUTES));
+                        // Two minute grace time
+                        .plus(2, ChronoUnit.MINUTES));
     }
 
     /**
@@ -623,16 +624,26 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
+     * Interrupt running threads without writing to the ctx since we do not want to be affected by a potential deadlock.
+     */
+    void interruptThread() {
+        if (_runner != null) {
+            log.info("Thread got intterupted, this could be due to shutdown or lost masterLock '" + getName() + "'");
+            _runner.interrupt();
+        }
+    }
+
+    /**
      * Make this tread completely stop
      */
     void killSchedule() {
         // :? Are we currently running and do we have the masterLock?
         if (_isRunning && _scheduledTaskRegistry.hasMasterLock()) {
             // -> Yes, we are currently running and we have the masterLock, try to log that we are stopping
-            getLastScheduleRun().ifPresent(ctx -> ctx.failed("Aborted due to shutdown!"));
+            getLastScheduleRun().ifPresent(ctx -> ctx.log("Interrupting due to shutdown!"));
         }
         _runFlag = false;
-
+        interruptThread();
         // Then wake the tread, so it is aware that we have updated the runFlag:
         notifyThread();
     }
@@ -678,9 +689,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     // ===== Internal helper classes ===================================================================================
 
     /**
-     * Implementation of the {@link ScheduleRunContext}, it is indirectly used when a schedule is running and
-     * this run is appending {@link #log(String)}, {@link #dispatched(String)}, {@link #done(String)}
-     * or {@link #failed(String)}
+     * Implementation of the {@link ScheduleRunContext}, it is indirectly used when a schedule is running and this run
+     * is appending {@link #log(String)}, {@link #dispatched(String)}, {@link #done(String)} or {@link #failed(String)}
      */
     private static class ScheduledTaskRunnerContext implements ScheduleRunContext {
         private final ScheduledTaskRunner _storebrandSchedule;
@@ -700,7 +710,8 @@ class ScheduledTaskRunner implements ScheduledTask {
             _clock = clock;
             _scheduledTaskRepository = scheduledTaskRepository;
             _hostname = hostname;
-            _scheduledRunDto = ScheduledRunDto.newWithStateStarted(_runId, storebrandSchedule.getName(), hostname, runStart);
+            _scheduledRunDto =
+                    ScheduledRunDto.newWithStateStarted(_runId, storebrandSchedule.getName(), hostname, runStart);
         }
 
         /**
@@ -858,7 +869,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * Copied from Mats3, inspired from <a href="https://stackoverflow.com/a/11306854">Stackoverflow - Denys Séguret</a>.
+     * Copied from Mats3, inspired from <a href="https://stackoverflow.com/a/11306854">Stackoverflow - Denys
+     * Séguret</a>.
      *
      * @return a String showing where this code was invoked from, like "Test.java.123;com.example.Test;methodName()"
      */
@@ -882,8 +894,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * NO-OP class only used to make sure the users are calling the {@link ScheduleRunContext#done(String)}, {@link
-     * ScheduleRunContext#failed(String)} or {@link ScheduleRunContext#dispatched(String)}
+     * NO-OP class only used to make sure the users are calling the {@link ScheduleRunContext#done(String)},
+     * {@link ScheduleRunContext#failed(String)} or {@link ScheduleRunContext#dispatched(String)}
      */
     static class ScheduleStatusValidResponse implements ScheduleStatus {
 
