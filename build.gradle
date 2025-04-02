@@ -23,7 +23,7 @@ wrapper { gradleVersion = "7.3.3" }
 
 allprojects {
     group 'com.storebrand.scheduledtask'
-    version '0.1.9-SNAPSHOT'
+    version '0.2.0+2025-04-02'
 }
 
 subprojects {
