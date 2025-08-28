@@ -22,6 +22,7 @@ import java.util.function.Function;
 
 import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleStatus;
 
@@ -46,7 +47,7 @@ public final class ScheduledTaskTestRunner {
      * @return the {@link ScheduleRunContext} so it can be inspected.
      */
     public static ScheduleRunContext runScheduledTask(ScheduledTask scheduledTask) {
-        scheduledTask.runNow();
+        scheduledTask.runNow(RunOnce.PROGRAMMATIC);
         return scheduledTask.getLastScheduleRun().orElseThrow();
     }
 

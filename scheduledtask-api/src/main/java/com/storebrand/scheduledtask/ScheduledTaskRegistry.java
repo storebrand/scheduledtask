@@ -125,6 +125,29 @@ public interface ScheduledTaskRegistry {
     }
 
     /**
+     * Represents the source on what triggered the task to run outside the normal schedule.
+     */
+    enum RunOnce {
+        /**
+         * The task where triggered by the monitor
+         */
+        MONITOR,
+        /**
+         * The task was triggered programmatically by calling {@link ScheduledTask#runNow(RunOnce)}
+         */
+        PROGRAMMATIC;
+
+        public static RunOnce fromString(String text) {
+            for (RunOnce s : RunOnce.values()) {
+                if (s.name().equalsIgnoreCase(text)) {
+                    return s;
+                }
+            }
+            return null;
+        }
+    }
+
+    /**
      * Interface that all tasks are required to implement. Contains a run method that should perform the actual task.
      */
     @FunctionalInterface
@@ -268,6 +291,11 @@ public interface ScheduledTaskRegistry {
          * master node will pick it up and run it as soon as it checks the nextRun instant.
          */
         boolean isRunOnce();
+
+        /**
+         * Check what triggered the runOnce flagg
+         */
+        Optional<RunOnce> getRunOnce();
 
         /**
          * If set informs that this schedule has a new cron expression that differs from the one defined in the code.

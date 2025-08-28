@@ -37,6 +37,7 @@ import com.storebrand.scheduledtask.ScheduledTask.Recovery;
 import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.db.InMemoryMasterLockRepositoryTest.ClockMock;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
@@ -279,7 +280,7 @@ public class InMemoryScheduledTaskRepositoryTest {
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
         _clock.setFixedClock(updateTime);
         Optional<Schedule> beforeSettingRunOnce = schedulerRep.getSchedule("test-schedule");
-        schedulerRep.setRunOnce("test-schedule", true);
+        schedulerRep.setRunOnce("test-schedule", RunOnce.PROGRAMMATIC);
 
         // :: Assert
         assertTrue(beforeSettingRunOnce.isPresent());
@@ -294,6 +295,8 @@ public class InMemoryScheduledTaskRepositoryTest {
         // No cron expression should be set since we are not overriding the cron expression
         assertNull(afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetRunOnce.get().getLastUpdated());
+        assertFalse(beforeSettingRunOnce.get().getRunOnce().isPresent());
+        assertEquals(RunOnce.PROGRAMMATIC, afterSetRunOnce.get().getRunOnce().orElse(null));
     }
 
     @Test

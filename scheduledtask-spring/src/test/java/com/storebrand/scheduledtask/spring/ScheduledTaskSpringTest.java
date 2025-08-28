@@ -123,7 +123,7 @@ public class ScheduledTaskSpringTest {
             "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_TASK_TABLE + " ( "
                     + " schedule_name VARCHAR(255) NOT NULL, "
                     + " is_active BIT NOT NULL, "
-                    + " run_once BIT NOT NULL, "
+                    + " run_once VARCHAR (100) NULL, "
                     + " cron_expression VARCHAR(255) NULL, "
                     + " next_run_utc DATETIME2 NOT NULL, "
                     + " last_updated_utc DATETIME2 NOT NULL, "

@@ -51,7 +51,8 @@ INSERT INTO stb_schedule_table_version (version) VALUES (2);
 -- Table for keeping track of the ScheduledTasks
 -- Column schedule_name: the name of the schedule
 -- Column is_active: flag that informs if this schedule is active (IE is running or paused)
--- Column run_once: flag that informs that this schedule should run immediately regardless of next_run_utc
+-- Column run_once: String that informs that this schedule should run immediately regardless of next_run_utc. Will specify
+-- if it was triggered by a user or by the system. If this is null then we are running normal schedule.
 -- Column cron_expression: When null the default coded in the java file will be used. if set then tis is the override
 -- Column next_run_utc: timestamp on when the schedule should be running next time
 -- Column last_updated_utc: Timestamp when this row was last updated. IE when the last run was triggered.
@@ -61,7 +62,7 @@ INSERT INTO stb_schedule_table_version (version) VALUES (2);
 CREATE TABLE stb_schedule (
     schedule_name VARCHAR(255) NOT NULL,
     is_active BIT NOT NULL,
-    run_once BIT NOT NULL,
+    run_once VARCHAR (100) NULL,
     cron_expression VARCHAR(255) NULL,
     next_run_utc datetime2 NOT NULL,
     last_updated_utc datetime2 NOT NULL,

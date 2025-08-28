@@ -141,7 +141,16 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
 
     @Override
     public boolean hasMasterLock() {
-        return _masterLockKeeper.isMaster();
+        return _masterLockKeeper._isMaster;
+    }
+
+    /**
+     * This will trigger an interrupt signal on all the running threads.
+     */
+    void interruptRunningSchedules() {
+        _schedules.entrySet().stream().forEach(entry -> {
+            entry.getValue().interruptThread();
+        });
     }
 
     /**
@@ -168,26 +177,28 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
     // ===== MasterLock and Schedule ===================================================================================
 
     /**
-     * Master lock is responsible for acquiring and keeping a lock, the node that has this lock will be responsible
-     * for running ALL Schedules.
-     * When a lock is first acquired this node has this for 5 minutes and in order to keep it this node has to the
-     * method {@link MasterLockRepository#keepLock(String, String)} within that timespan in order to keep it for a new
-     * 5 minutes. If this node does not manage to keep the lock within the 5 min timespan it means no nodes are master
-     * for the duration 5 - 10 min.
-     * After the lock has not been updated for 10 minutes it can be re-acquired again.
+     * Master lock is responsible for acquiring and keeping a lock, the node that has this lock will be responsible for
+     * running ALL Schedules. When a lock is first acquired this node has this for 5 minutes and in order to keep it
+     * this node has to the method {@link MasterLockRepository#keepLock(String, String)} within that timespan in order
+     * to keep it for a new 5 minutes. If this node does not manage to keep the lock within the 5 min timespan it means
+     * no nodes are master for the duration 5 - 10 min. After the lock has not been updated for 10 minutes it can be
+     * re-acquired again.
      */
     static class MasterLockKeeper {
         private static final long MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS = 2 * 60 * 1000; // 2 minutes
+        private static final long WATCHDOG_SLEEP_LOOP_IN_MILLISECONDS = 15 * 1000; // 15 seconds
         private static final long MASTER_LOCK_MAX_TIME_SINCE_LAST_UPDATE_MINUTES = 5;
 
-        private Thread _runner;
+        private Thread _masterLockRunner;
+        private Thread _watchdogRunner;
         private final Clock _clock;
         /* .. state vars .. */
         private volatile boolean _isMaster = false;
         private volatile Instant _lastUpdated = Instant.EPOCH;
         private volatile boolean _runFlag = true;
         private volatile boolean _isInitialRun = true;
-        private final Object _syncObject = new Object();
+        private final Object _syncObjectMasterLock = new Object();
+        private final Object _syncObjectWatchdog = new Object();
         private final MasterLockRepository _masterLockRepository;
         private final ScheduledTaskRegistryImpl _storebrandScheduleService;
         private final AtomicInteger _notMasterCounter = new AtomicInteger();
@@ -199,14 +210,55 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
             _storebrandScheduleService = storebrandScheduleService;
             _clock = clock;
             log.info("Starting MasterLock thread");
-            _runner = new Thread(MasterLockKeeper.this::runner, "MasterLock thread");
+            _masterLockRunner = new Thread(MasterLockKeeper.this::runner, "MasterLock thread");
+            _watchdogRunner = new Thread(MasterLockKeeper.this::watchDogThread, "MasterLock health check thread");
 
             // Make sure that the master lock is created:
             _masterLockRepository.tryCreateLock(MASTER_LOCK_NAME, Host.getLocalHostName());
         }
 
+        // :: This will periodically check if the master lock is updated and if not try will try to update the _isMaster
+        // flag. Due to the main thread queries a database we can get a situation where this is in a state where
+        // the database is not accessible so the keepLock can slide over the valid time. This thread will ensure that
+        // the master lock is kept up to date.
+        private void watchDogThread() {
+            // :: We will loop until the run flag is set to false
+            while (_runFlag) {
+                try {
+                    // :: Sleep a bit before we attempts to keep/acquire the lock
+                    synchronized (_syncObjectWatchdog) {
+                        log.debug("Thread MasterLock watchDog '" + MASTER_LOCK_NAME
+                                + " with nodeName '" + Host.getLocalHostName() + "' "
+                                + "is going to sleep for '" + WATCHDOG_SLEEP_LOOP_IN_MILLISECONDS + "' ms.");
+                        _syncObjectWatchdog.wait(WATCHDOG_SLEEP_LOOP_IN_MILLISECONDS);
+                    }
+                    // Check that the _lastUpdated is not over the limit of 5 minutes. If it is we are not master anymore.
+                    // ?: Are we currently master and have not been updated within the last 5 minutes?
+                    if (_isMaster && !isActiveWithin()) {
+                        // -> Yes, we are master and have not been updated within the last 5 minutes so we should update
+                        // the _isMaster flag to false.
+                        _isMaster = false;
+                        log.warn("Thread MasterLock watchDog '" + MASTER_LOCK_NAME
+                                + " with nodeName '" + Host.getLocalHostName() + "' "
+                                + "is marked as not master but the last update where above the limit, removing master "
+                                + "flag.");
+                        _storebrandScheduleService.interruptRunningSchedules();
+                    }
+                }
+                catch (InterruptedException e) {
+                    log.info("MasterLock on node '" + Host.getLocalHostName()
+                            + " health check sleep where interrupted. Will loop and check run flag.");
+                }
+            }
+            log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "' health check"
+                    + " with nodeName '" + Host.getLocalHostName() + "' "
+                    + "asked to exit, shutting down!");
+            _watchdogRunner = null;
+        }
+
         void runner() {
-            SLEEP_LOOP: while (_runFlag) {
+            SLEEP_LOOP:
+            while (_runFlag) {
                 try {
                     // ?: is this an initial run?
                     if (_isInitialRun) {
@@ -216,30 +268,28 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                         // nodes know who is the master node.
                         if (_masterLockRepository.tryAcquireLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                             // -> Yes, we managed to acquire the lock
-                            _isMaster = true;
-                            _lastUpdated = Instant.now(_clock);
+                            setMasterFlagAndUpdatedTime();
                             log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                     + " with nodeName '" + Host.getLocalHostName() + "' "
                                     + "managed to acquire the lock during the initial run");
                         }
-                        // Regardless if we managed to acquire the lock we have passed the initial run.
+                        // Regardless if we managed to acquire the lock, we have passed the initial run.
                         _isInitialRun = false;
                     }
 
                     // :: Sleep a bit before we attempts to keep/acquire the lock
-                    synchronized (_syncObject) {
+                    synchronized (_syncObjectMasterLock) {
                         log.debug("Thread MasterLock '" + MASTER_LOCK_NAME + "' sleeping, "
                                 + " with nodeName '" + Host.getLocalHostName() + "' "
                                 + "is going to sleep for '" + MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS + "' ms.");
-                        _syncObject.wait(MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS);
+                        _syncObjectMasterLock.wait(MASTER_LOCK_SLEEP_LOOP_IN_MILLISECONDS);
                     }
 
                     // :: Try to keep the lock, this will only succeed if the lock is already acquired for this node
                     // withing the last 5 minutes.
                     if (_masterLockRepository.keepLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                         // -> Yes, we managed to keep the master lock, go to sleep
-                        _isMaster = true;
-                        _lastUpdated = Instant.now(_clock);
+                        setMasterFlagAndUpdatedTime();
                         log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                 + " with nodeName '" + Host.getLocalHostName() + "' "
                                 + "managed to keep the lock.");
@@ -251,8 +301,7 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                     // ?: Did we manage to acquire the lock.
                     if (_masterLockRepository.tryAcquireLock(MASTER_LOCK_NAME, Host.getLocalHostName())) {
                         // -> Yes, we managed to acquire the lock
-                        _isMaster = true;
-                        _lastUpdated = Instant.now(_clock);
+                        setMasterFlagAndUpdatedTime();
                         _notMasterCounter.set(0);
                         log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                                 + " with nodeName '" + Host.getLocalHostName() + "' "
@@ -286,10 +335,20 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
                 }
             }
             // Exiting loop, so clear the runner thread and log that we are now shutting down.
-            _runner = null;
+            _masterLockRunner = null;
             log.info("Thread MasterLock '" + MASTER_LOCK_NAME + "', "
                     + " with nodeName '" + Host.getLocalHostName() + "' "
                     + "asked to exit, shutting down!");
+        }
+
+        /**
+         * Sets the master flag to true and updates the last updated time to now.
+         */
+        private void setMasterFlagAndUpdatedTime() {
+            // Setting the last updated time first, so we are sure that the time is set before the master flag is set.
+            // This due the watchDog can check the last updated time and forcefully set the master flag back to false.
+            _lastUpdated = Instant.now(_clock);
+              _isMaster = true;
         }
 
         /**
@@ -343,11 +402,11 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         }
 
         /**
-         * We are only Master if both {@link #_isMaster} is true, and we were last updated less than
+         * Checks if we were last updated less than
          * {@link #MASTER_LOCK_MAX_TIME_SINCE_LAST_UPDATE_MINUTES} minutes ago.
          */
-        public boolean isMaster() {
-            return _isMaster && _lastUpdated.isAfter(
+        public boolean isActiveWithin() {
+            return _lastUpdated.isAfter(
                     Instant.now(_clock).minus(MASTER_LOCK_MAX_TIME_SINCE_LAST_UPDATE_MINUTES, ChronoUnit.MINUTES));
         }
 
@@ -358,16 +417,18 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         void start() {
             _runFlag = true;
             _isInitialRun = true;
-            _runner.start();
+            _masterLockRunner.start();
+            _watchdogRunner.start();
         }
 
         void stop() {
             _runFlag = false;
-            synchronized (_syncObject) {
-                _syncObject.notifyAll();
+            synchronized (_syncObjectMasterLock) {
+                _syncObjectMasterLock.notifyAll();
             }
             try {
-                _runner.join(1000);
+                _masterLockRunner.join(1000);
+                _watchdogRunner.join(1000);
             }
             catch (InterruptedException e) {
                 // Ignore interrupt here, we do best effort to wait for the runner thread to stop.
@@ -388,12 +449,12 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
     public static class ScheduleImpl implements Schedule {
         private final String scheduleName;
         private final boolean active;
-        private final boolean runOnce;
+        private final RunOnce runOnce;
         private final String overriddenCronExpression;
         private final Instant nextRun;
         private final Instant lastUpdated;
 
-        public ScheduleImpl(String scheduleName, boolean active, boolean runOnce, String cronExpression,
+        public ScheduleImpl(String scheduleName, boolean active, RunOnce runOnce, String cronExpression,
                 Instant nextRun, Instant lastUpdated) {
             this.scheduleName = scheduleName;
             this.active = active;
@@ -415,9 +476,13 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
 
         @Override
         public boolean isRunOnce() {
-            return runOnce;
+            return getRunOnce().isPresent();
         }
 
+        @Override
+        public Optional<RunOnce> getRunOnce() {
+            return Optional.ofNullable(runOnce);
+        }
 
         @Override
         public Optional<String> getOverriddenCronExpression() {
@@ -572,8 +637,9 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         }
 
         @Override
-        @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE", justification = "cronExpressionParsed.next "
-                + "always uses Temporal LocalDateTime and is always known.")
+        @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE",
+                justification = "cronExpressionParsed.next "
+                        + "always uses Temporal LocalDateTime and is always known.")
         public ScheduledTask start() {
             // In the first insert we can calculate the next run directly since there is no override from db yet
             ScheduledTask scheduledTask = _schedules.compute(_scheduleName, (key, value) -> {

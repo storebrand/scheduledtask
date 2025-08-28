@@ -249,7 +249,10 @@ public class MasterLockSqlRepository implements MasterLockRepository {
             // ?: Are we upgrading from the initial version?
             if (version == 1) {
                 // -> Yes, we are upgrading from version 1 to 2
-                throw new TableValidationException(message + getUpgradeFromV1ToV2Message());
+                throw new TableValidationException(message +
+                        "Seems you are using version 1 of the required tables, you must upgrade to version 2.\n"
+                                + " An example SQL script to do this is located at:\n"
+                                + inspector.getMigrationFileLocation(TableInspector.MIGRATE_FROM_V1_TO_V2_SQL));
 
             }
 
@@ -258,26 +261,13 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         }
     }
 
-    private String getUpgradeFromV1ToV2Message() {
-        return "Seems you are using version 1 of the required tables, you must upgrade to version 2.\n"
-                + " This is done by running renaming the following columns:\n"
-                + " stb_schedule_master_locker.lock_taken_time => stb_schedule_master_locker.lock_taken_time_utc\n"
-                + " stb_schedule_master_locker.lock_last_updated_time => stb_schedule_master_locker.lock_last_updated_time_utc\n"
-                + " stb_schedule.next_run => stb_schedule.next_run_utc\n"
-                + " stb_schedule.last_updated => stb_schedule.last_updated_utc\n"
-                + " stb_schedule_run.run_start => stb_schedule_run.run_start_utc\n"
-                + " stb_schedule_run.status_time => stb_schedule_run.status_time_utc\n"
-                + "\n"
-                + " And to set the " + TableInspector.TABLE_VERSION + ".version to 2";
-    }
-
     private void validateTableStructure() {
         TableInspector inspector = new TableInspector(_dataSource, MASTER_LOCK_TABLE);
         // Verify that we have a valid table
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + MASTER_LOCK_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // :: Verify we have all the table columns and their sizes

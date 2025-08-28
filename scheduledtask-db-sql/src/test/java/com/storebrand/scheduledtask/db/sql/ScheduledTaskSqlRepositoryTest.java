@@ -44,6 +44,7 @@ import com.storebrand.scheduledtask.ScheduledTask.Recovery;
 import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
@@ -62,7 +63,7 @@ public class ScheduledTaskSqlRepositoryTest {
             "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_TASK_TABLE + " ( "
                     + " schedule_name VARCHAR(255) NOT NULL, "
                     + " is_active BIT NOT NULL, "
-                    + " run_once BIT NOT NULL, "
+                    + " run_once VARCHAR (100) NULL, "
                     + " cron_expression VARCHAR(255) NULL, "
                     + " next_run_utc DATETIME2 NOT NULL, "
                     + " last_updated_utc DATETIME2 NOT NULL, "
@@ -294,7 +295,7 @@ public class ScheduledTaskSqlRepositoryTest {
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
         _clock.setFixedClock(updateTime);
         Optional<Schedule> beforeSettingRunOnce = schedulerRep.getSchedule("test-schedule");
-        schedulerRep.setRunOnce("test-schedule", true);
+        schedulerRep.setRunOnce("test-schedule", RunOnce.PROGRAMMATIC);
 
         // :: Assert
         assertTrue(beforeSettingRunOnce.isPresent());
@@ -307,6 +308,8 @@ public class ScheduledTaskSqlRepositoryTest {
         assertEquals(insertTimeInstant, beforeSettingRunOnce.get().getLastUpdated());
         assertNull(afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetRunOnce.get().getLastUpdated());
+        assertFalse(beforeSettingRunOnce.get().getRunOnce().isPresent());
+        assertEquals(RunOnce.PROGRAMMATIC, afterSetRunOnce.get().getRunOnce().orElse(null));
     }
 
     @Test

@@ -29,12 +29,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
@@ -57,6 +59,11 @@ class ScheduledTaskRunner implements ScheduledTask {
     private static final int ELIDED_LOG_LINES_ON_MASTER_SLEEP = 8;
     private static String DEFAULT_LOGGER_NAME = ScheduledTask.class.getName();
 
+    private static final String MDC_TRACE_ID_KEY = "traceId";
+    private static final String MDC_TASK_RUN_ID_KEY = "scheduledTaskRunId";
+    private static final String MDC_TASK_NAME_KEY = "scheduledTaskName";
+    private static final String MDC_TASK_NAME_CLEAN_KEY = "scheduledTaskNameClean";
+
     private final ScheduledTaskConfig _config;
     private final ScheduledTaskRegistry _scheduledTaskRegistry;
     private final ScheduledTaskRepository _scheduledTaskRepository;
@@ -74,7 +81,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     private volatile boolean _active = true;
     private volatile boolean _runFlag = true;
     private volatile boolean _isRunning = false;
-    private volatile boolean _runOnce = false;
+    private volatile Optional<RunOnce> _runOnce;
     private volatile boolean _justStarted = true;
 
     ScheduledTaskRunner(ScheduledTaskConfig config, ScheduleRunnable runnable,
@@ -94,7 +101,7 @@ class ScheduledTaskRunner implements ScheduledTask {
         // If the scheduled task registry is in a special test mode then we don't start the thread runner, but instead
         // enable a special mode where we only run tasks by calling runNow().
         _testMode = (_scheduledTaskRegistry instanceof ScheduledTaskRegistryImpl) &&
-                ((ScheduledTaskRegistryImpl)_scheduledTaskRegistry).isTestMode();
+                ((ScheduledTaskRegistryImpl) _scheduledTaskRegistry).isTestMode();
 
         // ?: Are we in test mode?
         if (!_testMode) {
@@ -128,11 +135,12 @@ class ScheduledTaskRunner implements ScheduledTask {
                             updateStateFromSchedule();
                             _justStarted = false;
                         }
-                        if (_runOnce) {
+                        if (_runOnce.isPresent()) {
                             // We should run once, so we should not sleep but instead run the schedule now.
                             log.info("Thread for Task '" + getName()
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
-                                    + " is master and set to run once (NOW) and then continue as set in "
+                                    + " is master and set to run once (NOW) by '" + _runOnce.get()
+                                    + "' and then continue as set in "
                                     + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
                         }
                         // E-> Have we passed the next run timestamp?
@@ -150,7 +158,8 @@ class ScheduledTaskRunner implements ScheduledTask {
                                         + "' ms and wait for the next schedule run '" + _nextRun + "'.";
                                 // To avoid spamming the log too hard we only log to info every x sleep cycles.
                                 if (elidedSleepLogLines++ >= ELIDED_LOG_LINES_ON_MASTER_SLEEP) {
-                                    log.info(message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
+                                    log.info(
+                                            message + " NOTE: Elided this log line " + elidedSleepLogLines + " times.");
                                     elidedSleepLogLines = 0;
                                 }
                                 else {
@@ -216,13 +225,14 @@ class ScheduledTaskRunner implements ScheduledTask {
                     updateStateFromSchedule();
 
                     // ?: Check if we should run now once regardless of when the schedule should actually run
-                    if (_runOnce) {
+                    if (_runOnce.isPresent()) {
                         // -> Yes, we should only run once and then continue on the normal schedule plans.
-                        _scheduledTaskRepository.setRunOnce(getName(), false);
                         log.info("Thread for Task '" + getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
-                                + " is set to run once (NOW) and then continue as set in "
+                                + " is set to run once (NOW) by '" + _runOnce.get()
+                                + "' and then continue as set in "
                                 + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
+                        _scheduledTaskRepository.setRunOnce(getName(), null);
                         break SLEEP_LOOP;
                     }
 
@@ -317,7 +327,7 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         _active = scheduleFromDb.get().isActive();
         _nextRun = scheduleFromDb.get().getNextRun();
-        _runOnce = scheduleFromDb.get().isRunOnce();
+        _runOnce = scheduleFromDb.get().getRunOnce();
         return scheduleFromDb;
     }
 
@@ -328,47 +338,63 @@ class ScheduledTaskRunner implements ScheduledTask {
         // Update the next run time in the database
         _scheduledTaskRepository.updateNextRun(getName());
         Instant nextRun = nextScheduledRun(getActiveCronExpressionInternal(), Instant.now(_clock));
-        log.info("Thread for Task '" + getName()
-                + "' is beginning to do the run according "
-                + "to the set schedule '" + getActiveCronExpressionInternal().toString()
-                + "'. Setting next run to '" + nextRun + "'.");
         _currentRunStarted = Instant.now(_clock);
         long id = _scheduledTaskRepository.addScheduleRun(getName(), Host.getLocalHostName(),
                 _currentRunStarted, "Schedule run starting.");
         ScheduleRunContext ctx = new ScheduledTaskRunnerContext(id, ScheduledTaskRunner.this,
                 Host.getLocalHostName(), _scheduledTaskRepository, _clock, _currentRunStarted);
 
-
-        // ?: Is this schedule manually triggered? Ie set to run once.
-        if (ScheduledTaskRunner.this._runOnce) {
-            // -> Yes, this where set to run once and is manually triggered. so add a log line.
-            // note, this is named runNow in the gui but runOnce in the db so we use the term used
-            // in gui for the logging.
-            ctx.log("Manually started");
-        }
-
-        // :: Try to run the code that the user wants, log if it fails.
         try {
-            ScheduleStatus status = _runnable.run(ctx);
-            if (!(status instanceof ScheduleStatusValidResponse)) {
-                throw new IllegalArgumentException("The ScheduleRunContext returned a invalid ScheduleStatus,"
-                        + " make sure you are using done(), failed() or dispatched()");
-            }
-        }
-        catch (Throwable t) {
-            // Oh no, the schedule we set to run failed, we should log this and continue
-            // on the normal schedule loop
-            String message = "Schedule '" + getName() + " run failed due to an error.' ";
-            log.info(message);
-            ctx.failed(message, t);
-        }
-        _lastRunCompleted = Instant.now(_clock);
+            // :: Set MDC values for log lines.
+            MDC.put(MDC_TRACE_ID_KEY, "ScheduledTask[" + getNameCleanedAndStripped() + "]rid[" + id + "]"
+                                      + generateRandomString());
+            MDC.put(MDC_TASK_RUN_ID_KEY, String.valueOf(id));
+            MDC.put(MDC_TASK_NAME_KEY, getName());
+            MDC.put(MDC_TASK_NAME_CLEAN_KEY, getNameCleanedAndStripped());
 
-        _isRunning = false;
-        log.info("Thread for Task '" + getName() + "' "
-                + " runId '" + ctx.getRunId() + "' "
-                + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
-                + "ms to run.");
+            // Proceed with the run
+            log.info("Thread for Task '" + getName()
+                     + "' is beginning to do the run according "
+                     + "to the set schedule '" + getActiveCronExpressionInternal().toString()
+                     + "'. Setting next run to '" + nextRun + "'.");
+            // ?: Is this schedule manually or programmatically triggered? Ie set to run once.
+            if (ScheduledTaskRunner.this._runOnce.isPresent()) {
+                // -> Yes, this where set to run once and is manually/programmatically triggered. so add a log line.
+                // note, this is named runNow in the gui but runOnce in the db so we use the term used
+                // in gui for the logging.
+                ctx.log(_runOnce.get().name() + " started");
+            }
+
+            // :: Try to run the code that the user wants, log if it fails.
+            try {
+                ScheduleStatus status = _runnable.run(ctx);
+                if (!(status instanceof ScheduleStatusValidResponse)) {
+                    throw new IllegalArgumentException("The ScheduleRunContext returned a invalid ScheduleStatus,"
+                                                       + " make sure you are using done(), failed() or dispatched()");
+                }
+            }
+            catch (Throwable t) {
+                // Oh no, the schedule we set to run failed, we should log this and continue
+                // on the normal schedule loop
+                String message = "Schedule '" + getName() + " run failed due to an error.' ";
+                log.info(message);
+                ctx.failed(message, t);
+            }
+            _lastRunCompleted = Instant.now(_clock);
+
+            _isRunning = false;
+            log.info("Thread for Task '" + getName() + "' "
+                     + " runId '" + ctx.getRunId() + "' "
+                     + "used '" + Duration.between(_currentRunStarted, _lastRunCompleted).toMillis() + "' "
+                     + "ms to run.");
+        }
+        finally {
+            // :: Clear MDC values
+            MDC.remove(MDC_TRACE_ID_KEY);
+            MDC.remove(MDC_TASK_RUN_ID_KEY);
+            MDC.remove(MDC_TASK_NAME_KEY);
+            MDC.remove(MDC_TASK_NAME_CLEAN_KEY);
+        }
     }
 
     /**
@@ -413,8 +439,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * Set a new cronExpression to be used by the schedule. If this is set to null it will fall back to use the {@link
-     * #_defaultCronExpression} again.
+     * Set a new cronExpression to be used by the schedule. If this is set to null it will fall back to use the
+     * {@link #_defaultCronExpression} again.
      */
     @Override
     public void setOverrideExpression(String newCronExpression) {
@@ -454,6 +480,11 @@ class ScheduledTaskRunner implements ScheduledTask {
     @Override
     public String getName() {
         return _config.getName();
+    }
+
+    public String getNameCleanedAndStripped() {
+        return _config.getName().replace(" ", "_")
+                .replace(":", "_").strip();
     }
 
     @Override
@@ -525,8 +556,8 @@ class ScheduledTaskRunner implements ScheduledTask {
         // E-> We have started, so we should check if we have passed expected run time
         return Instant.now(_clock).isAfter(
                 nextScheduledRun(getActiveCronExpressionInternal(), lastRunStarted)
-                // Two minute grace time
-                .plus(2, ChronoUnit.MINUTES));
+                        // Two minute grace time
+                        .plus(2, ChronoUnit.MINUTES));
     }
 
     /**
@@ -623,16 +654,26 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
+     * Interrupt running threads without writing to the ctx since we do not want to be affected by a potential deadlock.
+     */
+    void interruptThread() {
+        if (_runner != null) {
+            log.info("Thread got intterupted, this could be due to shutdown or lost masterLock '" + getName() + "'");
+            _runner.interrupt();
+        }
+    }
+
+    /**
      * Make this tread completely stop
      */
     void killSchedule() {
         // :? Are we currently running and do we have the masterLock?
         if (_isRunning && _scheduledTaskRegistry.hasMasterLock()) {
             // -> Yes, we are currently running and we have the masterLock, try to log that we are stopping
-            getLastScheduleRun().ifPresent(ctx -> ctx.failed("Aborted due to shutdown!"));
+            getLastScheduleRun().ifPresent(ctx -> ctx.log("Interrupting due to shutdown!"));
         }
         _runFlag = false;
-
+        interruptThread();
         // Then wake the tread, so it is aware that we have updated the runFlag:
         notifyThread();
     }
@@ -655,9 +696,16 @@ class ScheduledTaskRunner implements ScheduledTask {
 
     /**
      * Manual trigger the schedule to run now.
+     *
+     * Replaced with {@link #runNow(RunOnce)}
      */
     @Override
     public void runNow() {
+        runNow(RunOnce.PROGRAMMATIC);
+    }
+
+    @Override
+    public void runNow(RunOnce runOnce) {
         // ?: Are we in special test mode?
         if (_testMode) {
             // -> Yes, then we just run the task, and return.
@@ -668,19 +716,17 @@ class ScheduledTaskRunner implements ScheduledTask {
         }
 
         // Write to db we should run this schedule now regardless of the cronExpression
-        _scheduledTaskRepository.setRunOnce(getName(), true);
+        _scheduledTaskRepository.setRunOnce(getName(), runOnce);
         // Then wake the tread so it is aware that we should run now once
         synchronized (_syncObject) {
             _syncObject.notifyAll();
         }
     }
-
     // ===== Internal helper classes ===================================================================================
 
     /**
-     * Implementation of the {@link ScheduleRunContext}, it is indirectly used when a schedule is running and
-     * this run is appending {@link #log(String)}, {@link #dispatched(String)}, {@link #done(String)}
-     * or {@link #failed(String)}
+     * Implementation of the {@link ScheduleRunContext}, it is indirectly used when a schedule is running and this run
+     * is appending {@link #log(String)}, {@link #dispatched(String)}, {@link #done(String)} or {@link #failed(String)}
      */
     private static class ScheduledTaskRunnerContext implements ScheduleRunContext {
         private final ScheduledTaskRunner _storebrandSchedule;
@@ -700,7 +746,8 @@ class ScheduledTaskRunner implements ScheduledTask {
             _clock = clock;
             _scheduledTaskRepository = scheduledTaskRepository;
             _hostname = hostname;
-            _scheduledRunDto = ScheduledRunDto.newWithStateStarted(_runId, storebrandSchedule.getName(), hostname, runStart);
+            _scheduledRunDto =
+                    ScheduledRunDto.newWithStateStarted(_runId, storebrandSchedule.getName(), hostname, runStart);
         }
 
         /**
@@ -858,7 +905,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * Copied from Mats3, inspired from <a href="https://stackoverflow.com/a/11306854">Stackoverflow - Denys Séguret</a>.
+     * Copied from Mats3, inspired from <a href="https://stackoverflow.com/a/11306854">Stackoverflow - Denys
+     * Séguret</a>.
      *
      * @return a String showing where this code was invoked from, like "Test.java.123;com.example.Test;methodName()"
      */
@@ -882,8 +930,8 @@ class ScheduledTaskRunner implements ScheduledTask {
     }
 
     /**
-     * NO-OP class only used to make sure the users are calling the {@link ScheduleRunContext#done(String)}, {@link
-     * ScheduleRunContext#failed(String)} or {@link ScheduleRunContext#dispatched(String)}
+     * NO-OP class only used to make sure the users are calling the {@link ScheduleRunContext#done(String)},
+     * {@link ScheduleRunContext#failed(String)} or {@link ScheduleRunContext#dispatched(String)}
      */
     static class ScheduleStatusValidResponse implements ScheduleStatus {
 
@@ -904,5 +952,19 @@ class ScheduledTaskRunner implements ScheduledTask {
         PrintWriter pw = new PrintWriter(sw);
         throwable.printStackTrace(pw);
         return sw.toString();
+    }
+
+    private static final String ALPHANUMERIC_CHARACTERS =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    /**
+     * Generate a random string, so our traceId will be unique (enough) for each run of the health check.
+     */
+    private String generateRandomString() {
+        char[] randomChars = new char[7];
+        for (int i = 0; i < randomChars.length; i++) {
+            randomChars[i] = ALPHANUMERIC_CHARACTERS
+                    .charAt(ThreadLocalRandom.current().nextInt(ALPHANUMERIC_CHARACTERS.length()));
+        }
+        return new String(randomChars);
     }
 }

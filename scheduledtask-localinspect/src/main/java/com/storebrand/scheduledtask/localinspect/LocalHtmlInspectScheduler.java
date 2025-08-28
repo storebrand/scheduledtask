@@ -19,7 +19,6 @@ package com.storebrand.scheduledtask.localinspect;
 import static java.util.stream.Collectors.toList;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,8 +31,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
-    import java.util.Comparator;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +41,7 @@ import com.storebrand.scheduledtask.ScheduledTask;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
@@ -54,7 +53,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * Will produce an "embeddable" HTML interface.
  * To use this all GET requests should retrieve the output from  {@link #outputJavaScript(Appendable)},
  * {@link #outputStyleSheet(Appendable)} and {@link #html(Appendable, Map)}. POST requests should be re-routed to
- * {@link #post(Map, String)} and all DELETE and PUT requests should be re-routed to {@link #json(Appendable, Map, String)}
+ * {@link #post(Map)} and all DELETE and PUT requests should be re-routed to {@link #json(Appendable, Map, String)}
  * <p>
  * For now, this has been developed with a dependency on Bootstrap 3.4.1 and JQuery 1.12.4. This will be improved, so
  * the entire HTML interface is self-contained.
@@ -298,71 +297,42 @@ public class LocalHtmlInspectScheduler {
     }
 
     /**
-     * The HTML GUI will invoke post calls to the same URL it is located at - map this to POST, content
-     * type is <code>"application/json; charset=utf-8"</code>.
-     * After the post is done the page should be reloaded to reflect the changes.
+     * The HTML GUI will invoke post calls to the same URL it is located at - map this to POST, content type is
+     * <code>"application/json; charset=utf-8"</code>. After the post is done the page should be reloaded to reflect the
+     * changes.
+     *
+     * @param requestParameters
+     *         parameters that the HTML UI sent. There will always be just a single value for each parameter.
      */
-    public void post(Map <String, String[]> requestParameters, String requestBody) {
-        Map<String, String> parametersFromBody = parseXWwwFormUrlencoded(requestBody);
+    public void post(Map <String, String> requestParameters) {
         // Convert the body to an array
         // :? Should we toggle the local active state
-        if (parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM) != null) {
+        if (requestParameters.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM) != null) {
             // -> Yes, toggle the active state for this instance for the given scheduler.
-            toggleActive(parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM));
+            toggleActive(requestParameters.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_ACTIVE_PARAM));
         }
 
         // :? Should we execute the scheduler
-        if (parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER) != null) {
+        if (requestParameters.get(LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER) != null) {
             // -> Yes, execute the given scheduler on all instances by calling a MATS endpoint.
-            triggerSchedule(parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER));
+            triggerSchedule(requestParameters.get(LocalHtmlInspectScheduler.MONITOR_EXECUTE_SCHEDULER));
         }
 
         // :? Should we change the cron expression
-        if (parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME) != null
-            && parametersFromBody.containsKey(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON)) {
+        if (requestParameters.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME) != null
+            && requestParameters.containsKey(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON)) {
             // -> Yes, change the cron expression for the given scheduler.
-            String name = parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME);
-            String parameter = parametersFromBody.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON);
+            String name = requestParameters.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON_SCHEDULER_NAME);
+            String parameter = requestParameters.get(LocalHtmlInspectScheduler.MONITOR_CHANGE_CRON);
             changeChronSchedule(name, parameter);
         }
-    }
-
-    /**
-     * Helper method to parse the request parameters retrieved in the post calls. This is needed due to backwards
-     * compatibility due to the old way of parsing the request parameters. Should be removed when the
-     * {@link #html(Appendable, Map)} uses JSON to send the post calls.
-     */
-    private Map<String, String> parseXWwwFormUrlencoded(String body) {
-        Map<String, String> formDataMap = new HashMap<>();
-        String[] pairs = body.split("&");
-        for (String pair : pairs) {
-            String[] keyValue = pair.split("=");
-            // ?: Do we have a key set?
-            if (keyValue.length >= 1) {
-                String key = keyValue[0];
-                String value = null;
-                // -> Yes, we have a key set
-                // ?: Do we have a value set, we may send a parameter without a value.
-                if (keyValue.length == 2) {
-                    // -> Yes, we have a value set
-                    try {
-                        value = java.net.URLDecoder.decode(keyValue[1], "UTF-8");
-                    }
-                    catch (UnsupportedEncodingException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                formDataMap.put(key, value);
-            }
-        }
-        return formDataMap;
     }
 
     /**
      * The HTML GUI will invoke JSON-over-HTTP to the same URL it is located at - map this to PUT and DELETE, content
      * type is <code>"application/json; charset=utf-8"</code>.
      */
-    public void json(Appendable out, Map <String, String[]> requestParameters, String requestBody) {
+    public void json(Appendable out, Map <String, String> requestParameters) {
         // Not currently used, added for future expansion possibilities.
     }
 
@@ -845,7 +815,7 @@ public class LocalHtmlInspectScheduler {
      */
     private void triggerSchedule(String scheduleName) {
         _scheduledTaskRegistry.getScheduledTasks().computeIfPresent(scheduleName, (ignored, scheduled) -> {
-            scheduled.runNow();
+            scheduled.runNow(RunOnce.MONITOR);
             return scheduled;
         });
     }

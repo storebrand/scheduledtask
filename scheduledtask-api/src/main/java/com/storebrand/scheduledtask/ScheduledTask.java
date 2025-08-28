@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
@@ -72,9 +73,21 @@ public interface ScheduledTask {
      * master lock it will delay for a short amount of time depending on the implementation. The current default
      * implementation will sleep for up to two minutes between checking for new tasks.
      * <p>
-     * This will prepend a line to the logs informing this schedule run was manually started.
+     * This will prepend a line to the logs informing this schedule run was {@link RunOnce#PROGRAMMATIC} started.
      */
     void runNow();
+
+
+    /**
+     * Sets a schedule to run immediately. Note it will first mark this schedule to run by setting a flag in the db,
+     * then wake up the scheduler thread so it will be triggered, assuming this is called on the node that has the
+     * master lock it will trigger nearly instantly. However, if this where triggered by a node that does not have the
+     * master lock it will delay for a short amount of time depending on the implementation. The current default
+     * implementation will sleep for up to two minutes between checking for new tasks.
+     * <p>
+     * This will prepend a line to the logs informing this schedule run was {@link RunOnce} started.
+     */
+    void runNow(RunOnce runOnce);
 
     /**
      * Check if the schedule task thread is alive. This should in theory always be true, but if the thread has been

@@ -48,6 +48,7 @@ import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
@@ -111,7 +112,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             // All schedules when created is by default active
             pStmt.setBoolean(2, true);
             // All new schedules should not have run once set
-            pStmt.setBoolean(3, false);
+            pStmt.setString(3, null);
             pStmt.setTimestamp(4, Timestamp.from(nextRunInstant), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setTimestamp(5, Timestamp.from(_clock.instant()), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(6, config.getName());
@@ -204,7 +205,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public int setRunOnce(String scheduleName, boolean runOnce) {
+    public int setRunOnce(String scheduleName, RunOnce runOnce) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
                 + " SET run_once = ? "
                 + " WHERE schedule_name = ?";
@@ -213,7 +214,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setBoolean(1, runOnce);
+            pStmt.setString(1, runOnce != null ? runOnce.name() : null);
             pStmt.setString(2, scheduleName);
             return pStmt.executeUpdate();
         }
@@ -236,7 +237,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 ScheduleImpl row = new ScheduleImpl(
                         result.getString("schedule_name"),
                         result.getBoolean("is_active"),
-                        result.getBoolean("run_once"),
+                        RunOnce.fromString(result.getString("run_once")),
                         result.getString("cron_expression"),
                         result.getTimestamp("next_run_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant(),
                         result.getTimestamp("last_updated_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant());
@@ -266,7 +267,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                     ScheduleImpl schedule = new ScheduleImpl(
                             result.getString("schedule_name"),
                             result.getBoolean("is_active"),
-                            result.getBoolean("run_once"),
+                            RunOnce.fromString(result.getString("run_once")),
                             result.getString("cron_expression"),
                             result.getTimestamp("next_run_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant(),
                             result.getTimestamp("last_updated_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant());
@@ -790,7 +791,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + SCHEDULE_TASK_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // ----- We got the same version as we expected, but do a sanity check regardless.
@@ -801,8 +802,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         inspector.validateColumn("is_active", false,
                 JDBCType.BOOLEAN, JDBCType.BIT, JDBCType.TINYINT, JDBCType.SMALLINT, JDBCType.INTEGER, JDBCType.NUMERIC);
 
-        inspector.validateColumn("run_once", false,
-                JDBCType.BOOLEAN, JDBCType.BIT, JDBCType.TINYINT, JDBCType.SMALLINT, JDBCType.INTEGER, JDBCType.NUMERIC);
+        inspector.validateColumn("run_once", 100, true,
+                JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
         inspector.validateColumn("cron_expression", 255, true,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
@@ -823,7 +824,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + SCHEDULE_RUN_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // :: Verify we have all the table columns and their sizes
@@ -866,7 +867,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + SCHEDULE_LOG_ENTRY_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // :: Verify we have all the table columns and their sizes
