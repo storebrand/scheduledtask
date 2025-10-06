@@ -26,9 +26,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.TimeZone;
 
 import javax.sql.DataSource;
 
@@ -37,26 +39,30 @@ import org.slf4j.LoggerFactory;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.MasterLock;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
-import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.MasterLockRepository;
+import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
- * Repository used by {@link ScheduledTaskRegistryImpl} to handle master election for a node.
- * On each {@link #tryAcquireLock(String, String)} it will also try to insert the lock, if the node managed to insert it
- * then that node has the lock.
+ * Repository used by {@link ScheduledTaskRegistryImpl} to handle master election for a node. On each
+ * {@link #tryAcquireLock(String, String)} it will also try to insert the lock if the node managed to insert it then
+ * that node has the lock.
  * <p>
- * After a lock has been acquired for a node it has to do the {@link #keepLock(String, String)} within the next 5 min
- * in order to be allowed to keep it. If it does not update withing that timespan it has to wait until the
+ * After a lock has been acquired for a node it has to do the {@link #keepLock(String, String)} within the next 5 min in
+ * order to be allowed to keep it. If it does not update withing that timespan, it has to wait until the
  * {@link MasterLockDto#getLockLastUpdatedTime()} is over 10 min old before any node can acquire it again. This means
- * there is a 5 min gap where no node can aquire the lock at all.
+ * there is a 5 min gap where no node can acquire the lock at all.
  *
  * @author Dag Bertelsen - dag.lennart.bertelsen@storebrand.no - dabe@dagbertelsen.com - 2021.03
  */
 public class MasterLockSqlRepository implements MasterLockRepository {
     private static final Logger log = LoggerFactory.getLogger(MasterLockSqlRepository.class);
     public static final String MASTER_LOCK_TABLE = "stb_schedule_master_locker";
+    // The UTC timezone is used to make sure we are not affected by daylight-saving time, IE this is a fixed timezone
+    // for when we are storing the time in the database. The Timestamp.from(Instant) will convert the Instant to the
+    // system default timezone if none are specified.
+    private static final TimeZone TIME_ZONE_UTC = TimeZone.getTimeZone("UTC");
     private final DataSource _dataSource;
     private final Clock _clock;
 
@@ -86,22 +92,22 @@ public class MasterLockSqlRepository implements MasterLockRepository {
     public boolean tryAcquireLock(String lockName, String nodeName) {
         // This lock already should exist so try to acquire it.
         String sql = "UPDATE " + MASTER_LOCK_TABLE
-                + " SET node_name = ?, lock_taken_time = ?, lock_last_updated_time = ? "
+                + " SET node_name = ?, lock_taken_time_utc = ?, lock_last_updated_time_utc = ? "
                 + " WHERE lock_name = ? "
                 // (lockLastUpdated <= $now - 10 minutes)). Can only acquire lock if the lastUpdated is more than 10 min old
-                + " AND lock_last_updated_time <= ?";
+                + " AND lock_last_updated_time_utc <= ?";
 
         try (Connection sqlConnection = _dataSource.getConnection();
-            PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             Instant now = _clock.instant();
-            // We should only allow to acquire the lock if the last_updated_time is older than 10 minutes.
+            // We should only allow acquiring the lock if the last_updated_time_utc is older than 10 minutes.
             // Then it means it is up for grabs.
             Instant lockShouldBeOlderThan = now.minus(10, ChronoUnit.MINUTES);
             pStmt.setString(1, nodeName);
-            pStmt.setTimestamp(2, Timestamp.from(now));
-            pStmt.setTimestamp(3, Timestamp.from(now));
+            pStmt.setTimestamp(2, Timestamp.from(now), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(3, Timestamp.from(now), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(4, lockName);
-            pStmt.setTimestamp(5, Timestamp.from(lockShouldBeOlderThan));
+            pStmt.setTimestamp(5, Timestamp.from(lockShouldBeOlderThan), Calendar.getInstance(TIME_ZONE_UTC));
             return pStmt.executeUpdate() == 1;
         }
         catch (SQLException e) {
@@ -113,14 +119,14 @@ public class MasterLockSqlRepository implements MasterLockRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean releaseLock(String lockName, String nodeName) {
         String sql = "UPDATE " + MASTER_LOCK_TABLE
-                + " SET lock_taken_time = ?, lock_last_updated_time = ? "
+                + " SET lock_taken_time_utc = ?, lock_last_updated_time_utc = ? "
                 + " WHERE lock_name = ? "
                 + " AND node_name = ?";
 
         try (Connection sqlConnection = _dataSource.getConnection();
-            PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setTimestamp(1, Timestamp.from(Instant.EPOCH));
-            pStmt.setTimestamp(2, Timestamp.from(Instant.EPOCH));
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
+            pStmt.setTimestamp(1, Timestamp.from(Instant.EPOCH), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(2, Timestamp.from(Instant.EPOCH), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(3, lockName);
             pStmt.setString(4, nodeName);
             return pStmt.executeUpdate() == 1;
@@ -134,21 +140,21 @@ public class MasterLockSqlRepository implements MasterLockRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public boolean keepLock(String lockName, String nodeName) {
         String sql = "UPDATE " + MASTER_LOCK_TABLE
-                + " SET node_name = ?,lock_last_updated_time = ? "
+                + " SET node_name = ?,lock_last_updated_time_utc = ? "
                 + " WHERE lock_name = ? "
                 + " AND node_name = ? "
                 // (lockLastUpdated >= $now - 5 minutes)). Can only do keeplock within 5 min after it was last updated.
-                + " AND lock_last_updated_time >= ?";
+                + " AND lock_last_updated_time_utc >= ?";
 
         try (Connection sqlConnection = _dataSource.getConnection();
-            PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             Instant now = _clock.instant();
             Instant lockShouldBeNewerThan = now.minus(5, ChronoUnit.MINUTES);
             pStmt.setString(1, nodeName);
-            pStmt.setTimestamp(2, Timestamp.from(now));
+            pStmt.setTimestamp(2, Timestamp.from(now), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(3, lockName);
             pStmt.setString(4, nodeName);
-            pStmt.setTimestamp(5, Timestamp.from(lockShouldBeNewerThan));
+            pStmt.setTimestamp(5, Timestamp.from(lockShouldBeNewerThan), Calendar.getInstance(TIME_ZONE_UTC));
             return pStmt.executeUpdate() == 1;
         }
         catch (SQLException e) {
@@ -162,7 +168,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         String sql = "SELECT * FROM " + MASTER_LOCK_TABLE;
 
         try (Connection sqlConnection = _dataSource.getConnection();
-            PreparedStatement pStmt = sqlConnection.prepareStatement(sql);
+             PreparedStatement pStmt = sqlConnection.prepareStatement(sql);
              ResultSet result = pStmt.executeQuery()) {
 
             List<MasterLockDto> masterLocks = new ArrayList<>();
@@ -170,12 +176,12 @@ public class MasterLockSqlRepository implements MasterLockRepository {
                 MasterLockDto row = new MasterLockDto(
                         result.getString("lock_name"),
                         result.getString("node_name"),
-                        result.getTimestamp("lock_taken_time"),
-                        result.getTimestamp("lock_last_updated_time"));
+                        result.getTimestamp("lock_taken_time_utc", Calendar.getInstance(TIME_ZONE_UTC)),
+                        result.getTimestamp("lock_last_updated_time_utc", Calendar.getInstance(TIME_ZONE_UTC)));
                 masterLocks.add(row);
             }
             return Collections.unmodifiableList(masterLocks);
-         }
+        }
     }
 
     @Override
@@ -193,15 +199,15 @@ public class MasterLockSqlRepository implements MasterLockRepository {
                     MasterLockDto dbo = new MasterLockDto(
                             result.getString("lock_name"),
                             result.getString("node_name"),
-                            result.getTimestamp("lock_taken_time"),
-                            result.getTimestamp("lock_last_updated_time"));
+                            result.getTimestamp("lock_taken_time_utc", Calendar.getInstance(TIME_ZONE_UTC)),
+                            result.getTimestamp("lock_last_updated_time_utc", Calendar.getInstance(TIME_ZONE_UTC)));
                     return Optional.of(dbo);
                 }
 
                 // E-> No, we did not find anything
                 return Optional.empty();
             }
-         }
+        }
         catch (SQLException throwables) {
             throw new RuntimeException(throwables);
         }
@@ -210,7 +216,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     private boolean tryCreateLockInternal(String lockName, String nodeName, Instant time) {
         String sql = "INSERT INTO " + MASTER_LOCK_TABLE
-                + " (lock_name, node_name, lock_taken_time, lock_last_updated_time) "
+                + " (lock_name, node_name, lock_taken_time_utc, lock_last_updated_time_utc) "
                 + " SELECT ?, ?, ?, ? "
                 + " WHERE NOT EXISTS (SELECT lock_name FROM " + MASTER_LOCK_TABLE
                 + " WHERE lock_name = ?)";
@@ -221,8 +227,8 @@ public class MasterLockSqlRepository implements MasterLockRepository {
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             pStmt.setString(1, lockName);
             pStmt.setString(2, nodeName);
-            pStmt.setTimestamp(3, Timestamp.from(time));
-            pStmt.setTimestamp(4, Timestamp.from(time));
+            pStmt.setTimestamp(3, Timestamp.from(time), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(4, Timestamp.from(time), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(5, lockName);
             return pStmt.executeUpdate() == 1;
         }
@@ -237,10 +243,21 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         // Get the tableVersion
         int version = inspector.getTableVersion();
         if (version != TableInspector.VALID_VERSION) {
+            String message = TableInspector.TABLE_VERSION + ".version has the version '" + version + "' "
+                    + "while we expected '" + TableInspector.VALID_VERSION + "'. ";
+
+            // ?: Are we upgrading from the initial version?
+            if (version == 1) {
+                // -> Yes, we are upgrading from version 1 to 2
+                throw new TableValidationException(message +
+                        "Seems you are using version 1 of the required tables, you must upgrade to version 2.\n"
+                                + " An example SQL script to do this is located at:\n"
+                                + inspector.getMigrationFileLocation(TableInspector.MIGRATE_FROM_V1_TO_V2_SQL));
+
+            }
+
             // NO-> different version than what we expected, this means these tables may not be correct.
-            log.error(TableInspector.TABLE_VERSION + " has the version '" + version + "' "
-                    + "while we expected '" + TableInspector.VALID_VERSION + "'. "
-                    + inspector.getMigrationLocationMessage());
+            log.error(message + inspector.getMigrationLocationMessage());
         }
     }
 
@@ -250,7 +267,7 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + MASTER_LOCK_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // :: Verify we have all the table columns and their sizes
@@ -260,10 +277,10 @@ public class MasterLockSqlRepository implements MasterLockRepository {
         inspector.validateColumn("node_name", 255, false,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
-        inspector.validateColumn("lock_taken_time", false,
+        inspector.validateColumn("lock_taken_time_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
 
-        inspector.validateColumn("lock_last_updated_time", false,
+        inspector.validateColumn("lock_last_updated_time_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
 
     }

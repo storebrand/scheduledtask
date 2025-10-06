@@ -48,12 +48,13 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 class TableInspector {
     private static final Logger log = LoggerFactory.getLogger(TableInspector.class);
     public static final String TABLE_VERSION = "stb_schedule_table_version";
-    public static final int VALID_VERSION = 1;
+    public static final int VALID_VERSION = 2;
     private final Map<String, TableColumn> _tableColumns;
     private final Map<String, String> _primaryKeys;
     private final Map<String, ForeignKey> _foreignKeys;
     private final String _tableName;
-    private static final String MIGRATION_FILE_NAME = "V_1__Create_initial_tables.sql";
+    private static final String CREATE_INITIAL_TABLES_SQL = "V_2__Create_initial_tables.sql";
+    public static final String MIGRATE_FROM_V1_TO_V2_SQL = "V_1_to_V_2_migrate_example.sql";
     private final DataSource _dataSource;
 
     @SuppressFBWarnings(value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",
@@ -74,7 +75,7 @@ class TableInspector {
     }
 
     /**
-     * Checks the table version table to see if the database are using the correct {@link #MIGRATION_FILE_NAME} version.
+     * Checks the table version table to see if the database are using the correct {@link #CREATE_INITIAL_TABLES_SQL} version.
      *
      */
     @SuppressFBWarnings(value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",
@@ -206,14 +207,21 @@ class TableInspector {
     /**
      * Returns the location of the migrationfile containing the creation of the required tables.
      */
-    public final String getMigrationFileLocation() {
+    public final String getInitialCreationFileLocation() {
+        return getMigrationFileLocation(CREATE_INITIAL_TABLES_SQL);
+    }
+
+    /**
+     * Returns the location of the migrationfile containing the creation of the required tables.
+     */
+    public final String getMigrationFileLocation(String filename) {
         URL codeSourceLocation = this.getClass().getProtectionDomain().getCodeSource().getLocation();
-        return codeSourceLocation + "com/storebrand/scheduledtask/db/sql/" + MIGRATION_FILE_NAME;
+        return codeSourceLocation + "com/storebrand/scheduledtask/db/sql/" + filename;
     }
 
     public final String getMigrationLocationMessage() {
         return "Make sure you are using the migration script "
-                + "'" + getMigrationFileLocation() + "' to create the required tables";
+                + "'" + getInitialCreationFileLocation() + "' to create the required tables";
     }
 
     /**

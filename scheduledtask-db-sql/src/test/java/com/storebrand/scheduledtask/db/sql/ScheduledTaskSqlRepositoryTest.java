@@ -42,12 +42,13 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import com.storebrand.scheduledtask.ScheduledTask.Criticality;
 import com.storebrand.scheduledtask.ScheduledTask.Recovery;
 import com.storebrand.scheduledtask.ScheduledTaskConfig;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
-import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
-import com.storebrand.scheduledtask.ScheduledTaskRegistry;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository.ScheduledRunDto;
+import com.storebrand.scheduledtask.db.sql.MasterLockRepositoryTest.ClockMock;
 
 /**
  * Tests for {@link ScheduledTaskSqlRepository}
@@ -62,10 +63,10 @@ public class ScheduledTaskSqlRepositoryTest {
             "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_TASK_TABLE + " ( "
                     + " schedule_name VARCHAR(255) NOT NULL, "
                     + " is_active BIT NOT NULL, "
-                    + " run_once BIT NOT NULL, "
+                    + " run_once VARCHAR (100) NULL, "
                     + " cron_expression VARCHAR(255) NULL, "
-                    + " next_run DATETIME2 NOT NULL, "
-                    + " last_updated DATETIME2 NOT NULL, "
+                    + " next_run_utc DATETIME2 NOT NULL, "
+                    + " last_updated_utc DATETIME2 NOT NULL, "
                     + " CONSTRAINT PK_schedule_name PRIMARY KEY (schedule_name) "
                     + " );";
 
@@ -74,16 +75,16 @@ public class ScheduledTaskSqlRepositoryTest {
                     + "run_id BIGINT NOT NULL IDENTITY(1, 1), "
                     + " schedule_name VARCHAR(255) NOT NULL, "
                     + " hostname VARCHAR(255) NOT NULL, "
-                    + " run_start DATETIME2 NOT NULL, "
+                    + " run_start_utc DATETIME2 NOT NULL, "
                     + " status VARCHAR(250) NULL, "
                     + " status_msg VARCHAR(MAX) NULL, "
                     + " status_stacktrace VARCHAR(MAX) NULL, "
-                    + " status_time DATETIME2 NOT NULL, "
+                    + " status_time_utc DATETIME2 NOT NULL, "
                     + " CONSTRAINT PK_run_id PRIMARY KEY (run_id) "
                     + " );";
 
     static final String SCHEDULE_RUN_INDEX_CREATE_SQL = "CREATE INDEX IX_stb_schedule_run_name_start_status"
-            + " ON stb_schedule_run (schedule_name, run_start DESC, status);";
+            + " ON stb_schedule_run (schedule_name, run_start_utc DESC, status);";
 
     static final String SCHEDULE_LOG_ENTRY_CREATE_SQL =
             "CREATE TABLE " + ScheduledTaskSqlRepository.SCHEDULE_LOG_ENTRY_TABLE + " ( "
@@ -91,7 +92,7 @@ public class ScheduledTaskSqlRepositoryTest {
                     + " run_id BIGINT NOT NULL, "
                     + " log_msg VARCHAR(MAX) NOT NULL, "
                     + " log_stacktrace VARCHAR(MAX) NULL, "
-                    + " log_time DATETIME2 NOT NULL, "
+                    + " log_time_utc DATETIME2 NOT NULL, "
                     + " CONSTRAINT PK_log_id PRIMARY KEY (log_id),"
                     + " CONSTRAINT FK_run_id FOREIGN KEY (run_id) REFERENCES stb_schedule_run (run_id) "
                     + " );";
@@ -294,7 +295,7 @@ public class ScheduledTaskSqlRepositoryTest {
         LocalDateTime updateTime = LocalDateTime.of(2021, 3, 3, 12, 12);
         _clock.setFixedClock(updateTime);
         Optional<Schedule> beforeSettingRunOnce = schedulerRep.getSchedule("test-schedule");
-        schedulerRep.setRunOnce("test-schedule", true);
+        schedulerRep.setRunOnce("test-schedule", RunOnce.PROGRAMMATIC);
 
         // :: Assert
         assertTrue(beforeSettingRunOnce.isPresent());
@@ -307,6 +308,8 @@ public class ScheduledTaskSqlRepositoryTest {
         assertEquals(insertTimeInstant, beforeSettingRunOnce.get().getLastUpdated());
         assertNull(afterSetRunOnce.get().getOverriddenCronExpression().orElse(null));
         assertEquals(insertTimeInstant, afterSetRunOnce.get().getLastUpdated());
+        assertFalse(beforeSettingRunOnce.get().getRunOnce().isPresent());
+        assertEquals(RunOnce.PROGRAMMATIC, afterSetRunOnce.get().getRunOnce().orElse(null));
     }
 
     @Test

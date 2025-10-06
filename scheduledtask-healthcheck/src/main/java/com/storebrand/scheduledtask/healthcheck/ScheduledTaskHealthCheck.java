@@ -74,6 +74,7 @@ public class ScheduledTaskHealthCheck implements ScheduledTaskListener {
 
     private volatile CheckSpecification _checkSpecification;
 
+    @SuppressWarnings("this-escape")
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public ScheduledTaskHealthCheck(ScheduledTaskRegistry scheduledTaskRegistry, HealthCheckRegistry healthCheckRegistry,
             Clock clock) {

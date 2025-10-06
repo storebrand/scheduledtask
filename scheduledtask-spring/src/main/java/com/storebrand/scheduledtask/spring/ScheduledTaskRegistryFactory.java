@@ -76,7 +76,12 @@ public class ScheduledTaskRegistryFactory extends AbstractFactoryBean<ScheduledT
     private ApplicationContext _applicationContext;
 
     public ScheduledTaskRegistryFactory() {
-        setSingleton(true);
+        // NO-OP
+    }
+
+    @Override
+    public boolean isSingleton() {
+        return true;
     }
 
     @Override

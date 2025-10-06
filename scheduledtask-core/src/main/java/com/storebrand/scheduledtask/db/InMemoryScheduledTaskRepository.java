@@ -36,6 +36,7 @@ import java.util.function.Predicate;
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
@@ -82,7 +83,7 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
             Instant nextRunInstant = nextRunTime.atZone(ZoneId.systemDefault()).toInstant();
 
             _scheduledTaskDefinitions.put(config.getName(), config);
-            InMemorySchedule schedule = new InMemorySchedule(config.getName(), null, true, false,
+            InMemorySchedule schedule = new InMemorySchedule(config.getName(), null, true, null,
                     nextRunInstant, _clock.instant());
             _schedules.put(config.getName(), schedule);
             return 1;
@@ -133,7 +134,7 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
     }
 
     @Override
-    public int setRunOnce(String scheduleName, boolean runOnce) {
+    public int setRunOnce(String scheduleName, RunOnce runOnce) {
         InMemorySchedule schedule = _schedules.get(scheduleName);
         if (schedule == null) {
             return 0;
@@ -333,11 +334,11 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
         private final String _name;
         private final String _cronExpression;
         private volatile boolean _active;
-        private volatile boolean _runOnce;
+        private volatile RunOnce _runOnce;
         private volatile Instant _nextRun;
         private volatile Instant _lastUpdated;
 
-        private InMemorySchedule(String name, String cronExpression, boolean active, boolean runOnce,
+        private InMemorySchedule(String name, String cronExpression, boolean active, RunOnce runOnce,
                 Instant nextRun, Instant lastUpdated) {
             _name = name;
             _cronExpression = cronExpression;
@@ -359,7 +360,12 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
 
         @Override
         public boolean isRunOnce() {
-            return _runOnce;
+            return getRunOnce().isPresent();
+        }
+
+        @Override
+        public Optional<RunOnce> getRunOnce() {
+            return Optional.ofNullable(_runOnce);
         }
 
         @Override
@@ -382,7 +388,7 @@ public class InMemoryScheduledTaskRepository implements ScheduledTaskRepository 
                     _lastUpdated);
         }
 
-        InMemorySchedule runOnce(boolean runOnce) {
+        InMemorySchedule runOnce(RunOnce runOnce) {
             return new InMemorySchedule(_name, _cronExpression, _active, runOnce, _nextRun,
                     _lastUpdated);
         }

@@ -18,10 +18,10 @@ package com.storebrand.scheduledtask;
 
 import static java.util.stream.Collectors.toMap;
 
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -449,12 +449,12 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
     public static class ScheduleImpl implements Schedule {
         private final String scheduleName;
         private final boolean active;
-        private final boolean runOnce;
+        private final RunOnce runOnce;
         private final String overriddenCronExpression;
         private final Instant nextRun;
         private final Instant lastUpdated;
 
-        public ScheduleImpl(String scheduleName, boolean active, boolean runOnce, String cronExpression,
+        public ScheduleImpl(String scheduleName, boolean active, RunOnce runOnce, String cronExpression,
                 Instant nextRun, Instant lastUpdated) {
             this.scheduleName = scheduleName;
             this.active = active;
@@ -476,9 +476,13 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
 
         @Override
         public boolean isRunOnce() {
-            return runOnce;
+            return getRunOnce().isPresent();
         }
 
+        @Override
+        public Optional<RunOnce> getRunOnce() {
+            return Optional.ofNullable(runOnce);
+        }
 
         @Override
         public Optional<String> getOverriddenCronExpression() {
@@ -506,12 +510,12 @@ public class ScheduledTaskRegistryImpl implements ScheduledTaskRegistry {
         private final String _stackTrace;
         private final LocalDateTime _logTime;
 
-        public LogEntryImpl(long logId, long runId, String message, String stackTrace, Timestamp logTime) {
+        public LogEntryImpl(long logId, long runId, String message, String stackTrace, Instant logTime) {
             _logId = logId;
             _runId = runId;
             _message = message;
             _stackTrace = stackTrace;
-            _logTime = logTime.toLocalDateTime();
+            _logTime = logTime.atZone(ZoneId.systemDefault()).toLocalDateTime();
         }
 
         @Override

@@ -23,9 +23,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
 import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
-import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
@@ -80,7 +81,7 @@ public interface ScheduledTaskRepository {
      */
     int setActive(String scheduleName, boolean active);
 
-    int setRunOnce(String scheduleName, boolean runOnce);
+    int setRunOnce(String scheduleName, RunOnce runOnce);
 
     /**
      * Get all schedules in the database

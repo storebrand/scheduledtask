@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunContext;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.ScheduleRunnable;
@@ -80,7 +81,7 @@ class ScheduledTaskRunner implements ScheduledTask {
     private volatile boolean _active = true;
     private volatile boolean _runFlag = true;
     private volatile boolean _isRunning = false;
-    private volatile boolean _runOnce = false;
+    private volatile Optional<RunOnce> _runOnce;
     private volatile boolean _justStarted = true;
 
     ScheduledTaskRunner(ScheduledTaskConfig config, ScheduleRunnable runnable,
@@ -134,11 +135,12 @@ class ScheduledTaskRunner implements ScheduledTask {
                             updateStateFromSchedule();
                             _justStarted = false;
                         }
-                        if (_runOnce) {
+                        if (_runOnce.isPresent()) {
                             // We should run once, so we should not sleep but instead run the schedule now.
                             log.info("Thread for Task '" + getName()
                                     + "' with nodeName '" + Host.getLocalHostName() + "' "
-                                    + " is master and set to run once (NOW) and then continue as set in "
+                                    + " is master and set to run once (NOW) by '" + _runOnce.get()
+                                    + "' and then continue as set in "
                                     + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
                         }
                         // E-> Have we passed the next run timestamp?
@@ -223,13 +225,14 @@ class ScheduledTaskRunner implements ScheduledTask {
                     updateStateFromSchedule();
 
                     // ?: Check if we should run now once regardless of when the schedule should actually run
-                    if (_runOnce) {
+                    if (_runOnce.isPresent()) {
                         // -> Yes, we should only run once and then continue on the normal schedule plans.
-                        _scheduledTaskRepository.setRunOnce(getName(), false);
                         log.info("Thread for Task '" + getName()
                                 + "' with nodeName '" + Host.getLocalHostName() + "' "
-                                + " is set to run once (NOW) and then continue as set in "
+                                + " is set to run once (NOW) by '" + _runOnce.get()
+                                + "' and then continue as set in "
                                 + "schedule '" + getActiveCronExpressionInternal().toString() + "'.");
+                        _scheduledTaskRepository.setRunOnce(getName(), null);
                         break SLEEP_LOOP;
                     }
 
@@ -324,7 +327,7 @@ class ScheduledTaskRunner implements ScheduledTask {
 
         _active = scheduleFromDb.get().isActive();
         _nextRun = scheduleFromDb.get().getNextRun();
-        _runOnce = scheduleFromDb.get().isRunOnce();
+        _runOnce = scheduleFromDb.get().getRunOnce();
         return scheduleFromDb;
     }
 
@@ -354,12 +357,12 @@ class ScheduledTaskRunner implements ScheduledTask {
                      + "' is beginning to do the run according "
                      + "to the set schedule '" + getActiveCronExpressionInternal().toString()
                      + "'. Setting next run to '" + nextRun + "'.");
-            // ?: Is this schedule manually triggered? Ie set to run once.
-            if (ScheduledTaskRunner.this._runOnce) {
-                // -> Yes, this where set to run once and is manually triggered. so add a log line.
+            // ?: Is this schedule manually or programmatically triggered? Ie set to run once.
+            if (ScheduledTaskRunner.this._runOnce.isPresent()) {
+                // -> Yes, this where set to run once and is manually/programmatically triggered. so add a log line.
                 // note, this is named runNow in the gui but runOnce in the db so we use the term used
                 // in gui for the logging.
-                ctx.log("Manually started");
+                ctx.log(_runOnce.get().name() + " started");
             }
 
             // :: Try to run the code that the user wants, log if it fails.
@@ -693,9 +696,16 @@ class ScheduledTaskRunner implements ScheduledTask {
 
     /**
      * Manual trigger the schedule to run now.
+     *
+     * Replaced with {@link #runNow(RunOnce)}
      */
     @Override
     public void runNow() {
+        runNow(RunOnce.PROGRAMMATIC);
+    }
+
+    @Override
+    public void runNow(RunOnce runOnce) {
         // ?: Are we in special test mode?
         if (_testMode) {
             // -> Yes, then we just run the task, and return.
@@ -706,13 +716,12 @@ class ScheduledTaskRunner implements ScheduledTask {
         }
 
         // Write to db we should run this schedule now regardless of the cronExpression
-        _scheduledTaskRepository.setRunOnce(getName(), true);
+        _scheduledTaskRepository.setRunOnce(getName(), runOnce);
         // Then wake the tread so it is aware that we should run now once
         synchronized (_syncObject) {
             _syncObject.notifyAll();
         }
     }
-
     // ===== Internal helper classes ===================================================================================
 
     /**

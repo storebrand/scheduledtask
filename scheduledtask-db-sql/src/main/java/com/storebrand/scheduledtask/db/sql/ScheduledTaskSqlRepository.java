@@ -30,11 +30,13 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.sql.DataSource;
@@ -42,18 +44,19 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.storebrand.scheduledtask.ScheduledTaskConfig;
-import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
 import com.storebrand.scheduledtask.ScheduledTask.RetentionPolicy;
+import com.storebrand.scheduledtask.ScheduledTaskConfig;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.LogEntry;
+import com.storebrand.scheduledtask.ScheduledTaskRegistry.RunOnce;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.Schedule;
 import com.storebrand.scheduledtask.ScheduledTaskRegistry.State;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl.LogEntryImpl;
 import com.storebrand.scheduledtask.ScheduledTaskRegistryImpl.ScheduleImpl;
 import com.storebrand.scheduledtask.SpringCronUtils.CronExpression;
-import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 import com.storebrand.scheduledtask.db.ScheduledTaskRepository;
+import com.storebrand.scheduledtask.db.sql.TableInspector.TableValidationException;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -68,6 +71,10 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     public static final String SCHEDULE_TASK_TABLE = "stb_schedule";
     public static final String SCHEDULE_RUN_TABLE = "stb_schedule_run";
     public static final String SCHEDULE_LOG_ENTRY_TABLE = "stb_schedule_log_entry";
+    // The UTC timezone is used to make sure we are not affected by daylight-saving time, IE this is a fixed timezone
+    // for when we are storing the time in the database. The Timestamp.from(Instant) will convert the Instant to the
+    // system default timezone if none are specified.
+    private static final TimeZone TIME_ZONE_UTC = TimeZone.getTimeZone("UTC");
     private final DataSource _dataSource;
     private final Clock _clock;
     private ConcurrentHashMap<String, ScheduledTaskConfig> _scheduledTaskDefinitions = new ConcurrentHashMap<>();
@@ -88,7 +95,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         _scheduledTaskDefinitions.put(config.getName(), config);
 
         String sql = "INSERT INTO " + SCHEDULE_TASK_TABLE
-                + " (schedule_name, is_active, run_once, next_run, last_updated) "
+                + " (schedule_name, is_active, run_once, next_run_utc, last_updated_utc) "
                 + " SELECT ?, ?, ?, ?, ?"
                 + " WHERE NOT EXISTS (SELECT schedule_name FROM " + SCHEDULE_TASK_TABLE
                 + " WHERE schedule_name = ?)";
@@ -105,9 +112,9 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             // All schedules when created is by default active
             pStmt.setBoolean(2, true);
             // All new schedules should not have run once set
-            pStmt.setBoolean(3, false);
-            pStmt.setTimestamp(4, Timestamp.from(nextRunInstant));
-            pStmt.setTimestamp(5, Timestamp.from(_clock.instant()));
+            pStmt.setString(3, null);
+            pStmt.setTimestamp(4, Timestamp.from(nextRunInstant), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(5, Timestamp.from(_clock.instant()), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(6, config.getName());
             int ret = pStmt.executeUpdate();
             if (ret == 1) {
@@ -128,7 +135,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings({"RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE"})
     public int setTaskOverridenCron(String scheduleName, String overrideCronExpression) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
-                + " SET cron_expression = ?, last_updated = ? "
+                + " SET cron_expression = ?, last_updated_utc = ? "
                 + " WHERE schedule_name = ?";
 
         log.info("Setting override cronExpression for [" + scheduleName + "] to [" + overrideCronExpression + "]");
@@ -136,7 +143,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             pStmt.setString(1, overrideCronExpression);
-            pStmt.setTimestamp(2, Timestamp.from(_clock.instant()));
+            pStmt.setTimestamp(2, Timestamp.from(_clock.instant()), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(3, scheduleName);
             int ret = pStmt.executeUpdate();
             updateNextRun(scheduleName);
@@ -151,7 +158,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings({"RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE", "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"})
     public int updateNextRun(String scheduleName) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
-                + " SET next_run = ?, last_updated = ? "
+                + " SET next_run_utc = ?, last_updated_utc = ? "
                 + " WHERE schedule_name = ?";
 
         Schedule schedule = getSchedule(scheduleName).orElseThrow();
@@ -166,8 +173,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setTimestamp(1, Timestamp.from(nextRunInstant));
-            pStmt.setTimestamp(2, Timestamp.from(_clock.instant()));
+            pStmt.setTimestamp(1, Timestamp.from(nextRunInstant), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(2, Timestamp.from(_clock.instant()), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(3, scheduleName);
             return pStmt.executeUpdate();
         }
@@ -198,7 +205,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     @Override
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
-    public int setRunOnce(String scheduleName, boolean runOnce) {
+    public int setRunOnce(String scheduleName, RunOnce runOnce) {
         String sql = "UPDATE " + SCHEDULE_TASK_TABLE
                 + " SET run_once = ? "
                 + " WHERE schedule_name = ?";
@@ -207,7 +214,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setBoolean(1, runOnce);
+            pStmt.setString(1, runOnce != null ? runOnce.name() : null);
             pStmt.setString(2, scheduleName);
             return pStmt.executeUpdate();
         }
@@ -230,10 +237,10 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 ScheduleImpl row = new ScheduleImpl(
                         result.getString("schedule_name"),
                         result.getBoolean("is_active"),
-                        result.getBoolean("run_once"),
+                        RunOnce.fromString(result.getString("run_once")),
                         result.getString("cron_expression"),
-                        result.getTimestamp("next_run").toInstant(),
-                        result.getTimestamp("last_updated").toInstant());
+                        result.getTimestamp("next_run_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant(),
+                        result.getTimestamp("last_updated_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant());
                 schedules.add(row);
             }
             return schedules.stream()
@@ -260,10 +267,10 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                     ScheduleImpl schedule = new ScheduleImpl(
                             result.getString("schedule_name"),
                             result.getBoolean("is_active"),
-                            result.getBoolean("run_once"),
+                            RunOnce.fromString(result.getString("run_once")),
                             result.getString("cron_expression"),
-                            result.getTimestamp("next_run").toInstant(),
-                            result.getTimestamp("last_updated").toInstant());
+                            result.getTimestamp("next_run_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant(),
+                            result.getTimestamp("last_updated_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant());
                     return Optional.of(schedule);
                 }
 
@@ -280,7 +287,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public long addScheduleRun(String scheduleName, String hostname, Instant runStart, String statusMsg) {
         String sql = "INSERT INTO " + SCHEDULE_RUN_TABLE
-                + " (schedule_name, hostname, status, status_msg, run_start, status_time) "
+                + " (schedule_name, hostname, status, status_msg, run_start_utc, status_time_utc) "
                 + " VALUES (?, ?, ?, ?, ?, ?)";
 
         log.debug("Adding scheduleRun for scheuleName [" + scheduleName + "]");
@@ -291,8 +298,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             pStmt.setString(2, hostname);
             pStmt.setString(3, ScheduledTaskRegistry.State.STARTED.toString());
             pStmt.setString(4, statusMsg);
-            pStmt.setTimestamp(5, Timestamp.from(runStart));
-            pStmt.setTimestamp(6, Timestamp.from(_clock.instant()));
+            pStmt.setTimestamp(5, Timestamp.from(runStart), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(6, Timestamp.from(_clock.instant()), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.execute();
             try (ResultSet rs = pStmt.getGeneratedKeys()) {
                 if (rs.next()) {
@@ -312,7 +319,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     public boolean setStatus(long runId, State state, String statusMsg, String statusStackTrace,
             Instant statusTime) {
         String sql = "UPDATE " + SCHEDULE_RUN_TABLE
-                + " SET status = ?, status_msg = ?, status_stacktrace = ?, status_time = ? "
+                + " SET status = ?, status_msg = ?, status_stacktrace = ?, status_time_utc = ? "
                 + " WHERE run_id = ?";
 
         if (state.equals(ScheduledTaskRegistry.State.STARTED)) {
@@ -322,12 +329,12 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
 
-            // We should only allow to acquire the lock if the last_updated_time is older than 10 minutes.
+            // We should only allow to acquire the lock if the last_updated_time_utc is older than 10 minutes.
             // Then it means it is up for grabs.
             pStmt.setString(1, state.toString());
             pStmt.setString(2, statusMsg);
             pStmt.setString(3, statusStackTrace);
-            pStmt.setTimestamp(4, Timestamp.from(statusTime));
+            pStmt.setTimestamp(4, Timestamp.from(statusTime), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setLong(5, runId);
             return pStmt.executeUpdate() == 1;
         }
@@ -373,7 +380,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     public Optional<ScheduledRunDto> getLastRunForSchedule(String scheduleName) {
         String sql = "SELECT TOP(1) * FROM " + SCHEDULE_RUN_TABLE
                 + " WHERE schedule_name = ? "
-                + " ORDER BY run_start DESC";
+                + " ORDER BY run_start_utc DESC";
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
@@ -399,12 +406,12 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public List<ScheduledRunDto> getLastScheduleRuns() {
         String sql = " SELECT * "
-                + " FROM (SELECT SCHEDULE_NAME, max(run_start) as run_start "
+                + " FROM (SELECT SCHEDULE_NAME, max(run_start_utc) as run_start_utc "
                 + "     from " + SCHEDULE_RUN_TABLE
                 + "     group by SCHEDULE_NAME) AS lr "
                 + " INNER JOIN  " + SCHEDULE_RUN_TABLE + " as sr "
-                + "     ON sr.SCHEDULE_NAME = lr.SCHEDULE_NAME AND sr.run_start = lr.run_start"
-                + " ORDER BY run_start DESC ";
+                + "     ON sr.SCHEDULE_NAME = lr.SCHEDULE_NAME AND sr.run_start_utc = lr.run_start_utc"
+                + " ORDER BY run_start_utc DESC ";
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql);
@@ -428,15 +435,15 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public List<ScheduledRunDto> getScheduleRunsBetween(String scheduleName, LocalDateTime from, LocalDateTime to) {
         String sql = "SELECT * FROM " + SCHEDULE_RUN_TABLE
-                + " WHERE run_start >= ? "
-                + " AND run_start <= ? "
+                + " WHERE run_start_utc >= ? "
+                + " AND run_start_utc <= ? "
                 + " AND schedule_name = ? "
-                + " ORDER BY run_start DESC";
+                + " ORDER BY run_start_utc DESC";
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setTimestamp(1, Timestamp.valueOf(from));
-            pStmt.setTimestamp(2, Timestamp.valueOf(to));
+            pStmt.setTimestamp(1, Timestamp.valueOf(from), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(2, Timestamp.valueOf(to), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(3, scheduleName);
 
             try (ResultSet result = pStmt.executeQuery()) {
@@ -459,18 +466,18 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public Map<Long, List<LogEntry>> getLogEntriesByRunId(String scheduleName, LocalDateTime from, LocalDateTime to) {
         String runIDsForScheduleName = "SELECT run_id FROM " + SCHEDULE_RUN_TABLE
-                + " WHERE run_start >= ? "
-                + " AND run_start <= ? "
+                + " WHERE run_start_utc >= ? "
+                + " AND run_start_utc <= ? "
                 + " AND schedule_name = ?";
 
         String sql = "SELECT * FROM " + SCHEDULE_LOG_ENTRY_TABLE
                 + " WHERE run_id IN (" + runIDsForScheduleName + ")"
-                + " ORDER BY log_time DESC";
+                + " ORDER BY log_time_utc DESC";
 
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
-            pStmt.setTimestamp(1, Timestamp.valueOf(from));
-            pStmt.setTimestamp(2, Timestamp.valueOf(to));
+            pStmt.setTimestamp(1, Timestamp.valueOf(from), Calendar.getInstance(TIME_ZONE_UTC));
+            pStmt.setTimestamp(2, Timestamp.valueOf(to), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.setString(3, scheduleName);
 
             Map<Long, List<LogEntry>> logEntriesByRunId = new HashMap<>();
@@ -483,7 +490,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                             result.getLong("run_id"),
                             result.getString("log_msg"),
                             result.getString("log_stacktrace"),
-                            result.getTimestamp("log_time"));
+                            result.getTimestamp("log_time_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant()
+                    );
                     logEntriesByRunId.computeIfAbsent(runId, notUsed -> new ArrayList<>()).add(logEntry);
                 }
 
@@ -499,7 +507,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     @SuppressFBWarnings("RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE")
     public void addLogEntry(long runId, LocalDateTime logTime, String message, String stackTrace) {
         String sql = "INSERT INTO " + SCHEDULE_LOG_ENTRY_TABLE
-                + " (run_id, log_msg, log_stacktrace, log_time) "
+                + " (run_id, log_msg, log_stacktrace, log_time_utc) "
                 + " VALUES (?, ?, ?, ?)";
 
         log.debug("Adding logEntry for runId [" + runId + "], "
@@ -511,7 +519,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             pStmt.setLong(1, runId);
             pStmt.setString(2, message);
             pStmt.setString(3, stackTrace);
-            pStmt.setTimestamp(4, Timestamp.valueOf(logTime));
+            pStmt.setTimestamp(4, Timestamp.valueOf(logTime), Calendar.getInstance(TIME_ZONE_UTC));
             pStmt.executeUpdate();
         }
         catch (SQLException e) {
@@ -524,7 +532,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
     public List<LogEntry> getLogEntries(long runId) {
         String sql = "SELECT * FROM " + SCHEDULE_LOG_ENTRY_TABLE
                 + " WHERE run_id = ? "
-                + " ORDER BY log_time ASC ";
+                + " ORDER BY log_time_utc ASC ";
         try (Connection sqlConnection = _dataSource.getConnection();
              PreparedStatement pStmt = sqlConnection.prepareStatement(sql)) {
             pStmt.setLong(1, runId);
@@ -538,7 +546,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                             result.getLong("run_id"),
                             result.getString("log_msg"),
                             result.getString("log_stacktrace"),
-                            result.getTimestamp("log_time"));
+                            result.getTimestamp("log_time_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant()
+                    );
                     logEntries.add(logEntry);
                 }
 
@@ -559,8 +568,8 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
                 state,
                 result.getString("status_msg"),
                 result.getString("status_stacktrace"),
-                result.getTimestamp("run_start").toInstant(),
-                result.getTimestamp("status_time").toInstant());
+                result.getTimestamp("run_start_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant(),
+                result.getTimestamp("status_time_utc", Calendar.getInstance(TIME_ZONE_UTC)).toInstant());
     }
 
     // ===== Retention policy =================================================================
@@ -678,7 +687,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
     private Optional<LocalDateTime> findDeleteOlderForKeepMax(Connection sqlConnection, String scheduleName, int keep,
             State status) throws SQLException {
-        String sql = "SELECT run_start FROM " + SCHEDULE_RUN_TABLE + " WHERE schedule_name = ? ";
+        String sql = "SELECT run_start_utc FROM " + SCHEDULE_RUN_TABLE + " WHERE schedule_name = ? ";
         // ?: Are we querying for a specific status?
         if (status != null) {
             // Yes -> Add specific status to query
@@ -688,7 +697,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             // No -> Then we should delete DONE, NOOP and FAILED statuses. We should not delete runs that are not complete.
             sql += " AND status IN (?, ?, ?) ";
         }
-        sql += " ORDER BY schedule_name, run_start DESC, status "
+        sql += " ORDER BY schedule_name, run_start_utc DESC, status "
                 + " OFFSET ? ROWS "
                 + " FETCH NEXT 1 ROWS ONLY ";
 
@@ -709,8 +718,11 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
             ResultSet rs = pStmt.executeQuery();
             if (rs.next()) {
-                Timestamp runStart = rs.getTimestamp("run_start");
-                return Optional.of(runStart.toLocalDateTime());
+                Timestamp runStart = rs.getTimestamp("run_start_utc", Calendar.getInstance(TIME_ZONE_UTC));
+                if (runStart == null) {
+                    return Optional.empty();
+                }
+                return Optional.of(runStart.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime());
             }
         }
         return Optional.empty();
@@ -720,7 +732,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
             String scheduleName, LocalDateTime deleteOlder, State status) throws SQLException {
 
         String where = " WHERE schedule_name = ?"
-                + " AND run_start <= ?";
+                + " AND run_start_utc<= ?";
         // ?: Are we querying for a specific status?
         if (status != null) {
             // Yes -> Add specific status to query
@@ -739,7 +751,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         try (PreparedStatement pStmt = sqlConnection.prepareStatement(deleteLogs)) {
             pStmt.setString(1, scheduleName);
-            pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder));
+            pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder), Calendar.getInstance(TIME_ZONE_UTC));
             if (status != null) {
                 pStmt.setString(3, status.name());
             }
@@ -754,7 +766,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
 
         try (PreparedStatement pStmt = sqlConnection.prepareStatement(deleteRuns)) {
             pStmt.setString(1, scheduleName);
-            pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder));
+            pStmt.setTimestamp(2, Timestamp.valueOf(deleteOlder), Calendar.getInstance(TIME_ZONE_UTC));
             if (status != null) {
                 pStmt.setString(3, status.name());
             }
@@ -779,7 +791,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + SCHEDULE_TASK_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // ----- We got the same version as we expected, but do a sanity check regardless.
@@ -790,16 +802,16 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         inspector.validateColumn("is_active", false,
                 JDBCType.BOOLEAN, JDBCType.BIT, JDBCType.TINYINT, JDBCType.SMALLINT, JDBCType.INTEGER, JDBCType.NUMERIC);
 
-        inspector.validateColumn("run_once", false,
-                JDBCType.BOOLEAN, JDBCType.BIT, JDBCType.TINYINT, JDBCType.SMALLINT, JDBCType.INTEGER, JDBCType.NUMERIC);
+        inspector.validateColumn("run_once", 100, true,
+                JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
         inspector.validateColumn("cron_expression", 255, true,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
-        inspector.validateColumn("next_run", false,
+        inspector.validateColumn("next_run_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
 
-        inspector.validateColumn("last_updated", false,
+        inspector.validateColumn("last_updated_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
     }
 
@@ -812,7 +824,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + SCHEDULE_RUN_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // :: Verify we have all the table columns and their sizes
@@ -825,7 +837,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         inspector.validateColumn("hostname", 255, false,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
-        inspector.validateColumn("run_start", false,
+        inspector.validateColumn("run_start_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
 
         inspector.validateColumn("status", 250, true,
@@ -841,7 +853,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         inspector.validateColumn("status_stacktrace", 3000, true,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
-        inspector.validateColumn("status_time", false,
+        inspector.validateColumn("status_time_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
     }
 
@@ -855,7 +867,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         if (inspector.amountOfColumns() == 0) {
             // Table was not found
             throw new TableValidationException("Table '" + SCHEDULE_LOG_ENTRY_TABLE + "' where not found, "
-                    + "create the tables by manually importing '" + inspector.getMigrationFileLocation() + "'");
+                    + "create the tables by manually importing '" + inspector.getInitialCreationFileLocation() + "'");
         }
 
         // :: Verify we have all the table columns and their sizes
@@ -875,7 +887,7 @@ public class ScheduledTaskSqlRepository implements ScheduledTaskRepository {
         inspector.validateColumn("log_stacktrace", 3000, true,
                 JDBCType.VARCHAR, JDBCType.NVARCHAR, JDBCType.LONGVARCHAR, JDBCType.LONGNVARCHAR);
 
-        inspector.validateColumn("log_time", false,
+        inspector.validateColumn("log_time_utc", false,
                 JDBCType.TIMESTAMP, JDBCType.TIME, JDBCType.TIME_WITH_TIMEZONE, JDBCType.TIMESTAMP_WITH_TIMEZONE);
     }
 
